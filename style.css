@@ -231,6 +231,18 @@ body {
   color: var(--accent);
 }
 
+.eci-note {
+  margin-top: 0.75rem;
+}
+
+.eci-scale-toggle {
+  margin-bottom: 0.5rem;
+}
+
+.plot-block--eci {
+  margin-top: 0.5rem;
+}
+
 /* Theory / equations */
 
 .theory .theory-intro {

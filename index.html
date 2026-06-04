@@ -11,7 +11,7 @@
 <body>
   <header class="app-header">
     <h1>ROE → RTN 相対軌道可視化</h1>
-    <p class="subtitle">Relative Orbital Elements から RTN 座標系での相対軌道（線形近似）</p>
+    <p class="subtitle">ROE から RTN 相対軌道と ECI（慣性系）での絶対軌道を可視化（線形近似）</p>
   </header>
 
   <main class="app-layout">
@@ -141,6 +141,12 @@
           <li><strong>T</strong> — Along-track [km]</li>
           <li><strong>N</strong> — Cross-track [km]</li>
         </ul>
+        <p class="theory-intro eci-note">
+          <strong>ECI</strong> 表示: 赤道面内の近円 chief 軌道を仮定し、
+          <var>r</var><sub>deputy</sub> =
+          <var>r</var><sub>chief</sub> + <var>R</var><var>R̂</var> + <var>T</var><var>T̂</var> + <var>N</var><var>N̂</var>
+          で慣性系に変換します。
+        </p>
       </section>
     </aside>
 
@@ -152,7 +158,7 @@
       </section>
 
       <section class="plot-block plot-block--projections">
-        <h2 class="plot-title">2D 投影</h2>
+        <h2 class="plot-title">RTN — 2D 投影</h2>
         <div class="projection-grid">
           <div class="projection-cell">
             <h3>T–R 平面</h3>
@@ -165,6 +171,36 @@
           <div class="projection-cell">
             <h3>R–N 平面</h3>
             <div id="plot-rn" class="plot-container plot-container--small"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="plot-block plot-block--eci">
+        <h2 class="plot-title">3D — ECI（慣性系）</h2>
+        <label class="checkbox-label eci-scale-toggle">
+          <input type="checkbox" id="eci-full-scale">
+          chief 全軌道スケールで表示（オフ時は deputy 付近にズーム）
+        </label>
+        <p class="plot-caption" id="plot-eci-caption">
+          軸: X, Y, Z [km]（地心 ECI）。赤道面内の chief 近円軌道を仮定。
+        </p>
+        <div id="plot-eci-3d" class="plot-container"></div>
+      </section>
+
+      <section class="plot-block plot-block--projections">
+        <h2 class="plot-title">ECI — 2D 投影</h2>
+        <div class="projection-grid">
+          <div class="projection-cell">
+            <h3>X–Y 平面</h3>
+            <div id="plot-eci-xy" class="plot-container plot-container--small"></div>
+          </div>
+          <div class="projection-cell">
+            <h3>X–Z 平面</h3>
+            <div id="plot-eci-xz" class="plot-container plot-container--small"></div>
+          </div>
+          <div class="projection-cell">
+            <h3>Y–Z 平面</h3>
+            <div id="plot-eci-yz" class="plot-container plot-container--small"></div>
           </div>
         </div>
       </section>

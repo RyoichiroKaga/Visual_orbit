@@ -7,7 +7,7 @@ Relative Orbital Elements（ROE）の各パラメータをスライダーで調�
 ## この Web アプリの目的
 
 - 近円軌道・小さい相対運動を仮定した **線形近似**により、ROE から RTN 相対位置を即座に計算する
-- スライダー操作と連動した **3D プロット**（および 2D 投影）で相対軌道の変化を確認する
+- スライダー操作と連動した **RTN** および **ECI（慣性系）** の 3D / 2D プロットで相対・絶対軌道を確認する
 - 研究室のデモや発表資料向けに、ブラウザだけで動く **静的サイト**として配布する
 
 ## ROE（Relative Orbital Elements）とは
@@ -31,7 +31,23 @@ chief 衛星を基準とした局所直交座標系です。
 - **T（Along-track）** — 速度方向に近い軌道面内の接線方向
 - **N（Cross-track）** — 軌道角運動量に沿った法線方向（軌道面の外側）
 
-本アプリの 3D プロットでは、横軸 **T**、縦軸 **R**、奥行き **N** [km] とし、chief を原点に表示します。
+本アプリの RTN 3D プロットでは、横軸 **T**、縦軸 **R**、奥行き **N** [km] とし、chief を原点に表示します。
+
+### ECI（Earth-Centered Inertial）表示
+
+赤道面内の**近円 chief 軌道**を仮定し、各サンプル点で RTN 基底を ECI に取り込んで絶対位置を計算します。
+
+\[
+\mathbf{r}_{\mathrm{deputy}}^{\mathrm{ECI}}
+= \mathbf{r}_{\mathrm{chief}}^{\mathrm{ECI}}
++ R\,\hat{\mathbf{R}} + T\,\hat{\mathbf{T}} + N\,\hat{\mathbf{N}}
+\]
+
+- \(\hat{\mathbf{R}}\): 地心 → chief 方向（単位ベクトル）
+- \(\hat{\mathbf{T}}\): chief 速度方向（近円・赤道軌道で \([-\sin u,\ \cos u,\ 0]\)）
+- \(\hat{\mathbf{N}} = \hat{\mathbf{R}} \times \hat{\mathbf{T}}\)（赤道軌道では \([0,0,1]\)）
+
+**デフォルトは deputy 軌跡付近に自動ズーム**（GEO スケールでは相対変位が見えないため）。チェックボックスで chief 全軌道スケールに切り替え可能です。
 
 ## 使用している近似式
 
