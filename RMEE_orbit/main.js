@@ -150,14 +150,13 @@ function meanAnomalyFromTrueAnomaly(nu_rad, e) {
 function coeToMee(coe) {
   const { a_km, e, i_rad, raan_rad, argp_rad, M_rad } = coe;
   const Omw = raan_rad + argp_rad;
-  const nu = trueAnomalyFromMeanAnomaly(M_rad, e);
   return {
     p_km: a_km * (1 - e * e),
     f: e * Math.cos(Omw),
     g: e * Math.sin(Omw),
     h: Math.tan(i_rad / 2) * Math.cos(raan_rad),
     k: Math.tan(i_rad / 2) * Math.sin(raan_rad),
-    L_rad: normalizeAngleRad(raan_rad + argp_rad + nu),
+    L_rad: normalizeAngleRad(raan_rad + argp_rad + M_rad),
   };
 }
 
@@ -172,7 +171,7 @@ function meeToKmDeg(mee) {
   };
 }
 
-/** MEE → COE（L は真経度、M は逆ケプラーで求める） */
+/** MEE → COE（L = Ω + ω + M から M を復元） */
 function meeToCoe(mee) {
   const { p_km, f, g, h, k, L_rad } = mee;
   const e = Math.hypot(f, g);
@@ -181,8 +180,7 @@ function meeToCoe(mee) {
   const i_rad = 2 * Math.atan(Math.hypot(h, k));
   const raan_rad = Math.atan2(k, h);
   const argp_rad = normalizeAngleRad(Math.atan2(g, f) - raan_rad);
-  const nu_rad = normalizeAngleRad(L_rad - raan_rad - argp_rad);
-  const M_rad = meanAnomalyFromTrueAnomaly(nu_rad, e);
+  const M_rad = normalizeAngleRad(L_rad - raan_rad - argp_rad);
   return { a_km, e, i_rad, raan_rad, argp_rad, M_rad };
 }
 
