@@ -186,15 +186,25 @@ function updateDriftRateDisplay(a_km, roe) {
   const el = document.getElementById("drift-rate-display");
   if (!el) return;
 
+  if (Math.abs(roe.delta_a) < 1e-12) {
+    el.textContent =
+      "δa ≈ 0 のため along-track ドリフトはありません。\n" +
+      "δa スライダーを 0 以外に動かしてください。";
+    el.classList.add("drift-rate--warn");
+    return;
+  }
+
+  el.classList.remove("drift-rate--warn");
+
   const n = chiefMeanMotionRadS(a_km);
   const dDeltaLambdaDt = -DRIFT_LAMBDA_FACTOR * n * roe.delta_a;
   const driftPerOrbitKm = alongTrackDriftPerOrbitKm(a_km, roe.delta_a);
-  const periodHr = (TWO_PI / n) / 3600;
+  const periodHr = TWO_PI / n / 3600;
 
   el.textContent =
     `δλ̇ = ${formatRoeValue(dDeltaLambdaDt)} /s\n` +
     `1 周あたり ΔT ≈ ${driftPerOrbitKm.toFixed(3)} km\n` +
-    `T_orbit ≈ ${(periodHr).toFixed(2)} h`;
+    `T_orbit ≈ ${periodHr.toFixed(2)} h`;
 }
 
 function updateModeUI() {
@@ -240,12 +250,22 @@ function initSliders() {
   }
 }
 
+/** Plotly.react はトレース数変更に弱い → 構造が変わったら newPlot */
+function getPlotStructureKey() {
+  const drift = isDriftMode();
+  const showRef =
+    drift && document.getElementById("show-single-orbit-ref").checked;
+  return `${drift ? "drift" : "single"}|ref=${showRef ? 1 : 0}|orb=${drift ? readNumDriftOrbits() : 0}`;
+}
+
 function initModeControls() {
   document.querySelectorAll('input[name="display-mode"]').forEach((radio) => {
-    radio.addEventListener("change", () => {
+    const onModeChange = () => {
       updateModeUI();
-      updateAllPlots();
-    });
+      updateAllPlots(true);
+    };
+    radio.addEventListener("change", onModeChange);
+    radio.addEventListener("click", onModeChange);
   });
 
   const orbitSlider = document.getElementById("num-drift-orbits");
@@ -260,7 +280,7 @@ function initModeControls() {
 
   document
     .getElementById("show-single-orbit-ref")
-    .addEventListener("change", updateAllPlots);
+    .addEventListener("change", () => updateAllPlots(true));
 
   updateModeUI();
 }
@@ -270,6 +290,7 @@ function initModeControls() {
 // ---------------------------------------------------------------------------
 
 let plotsInitialized = false;
+let lastPlotStructureKey = null;
 
 function buildChiefTrace3D() {
   return {
@@ -398,7 +419,9 @@ function build2DTraces(orbit, plane, referenceOrbit) {
     buildChief2D()
   );
 
-  return { traces, layout: layout2D(xTitle, yTitle, 260) };
+  const planeId =
+    plane === PLANE_TR ? "tr" : plane === PLANE_TN ? "tn" : "rn";
+  return { traces, layout: layout2D(xTitle, yTitle, 260, planeId) };
 }
 
 const PLANE_TR = {
@@ -423,23 +446,31 @@ const PLANE_RN = {
   color: "#a371f7",
 };
 
-function layout2D(xTitle, yTitle, height) {
+function layout2D(xTitle, yTitle, height, planeId) {
+  const drift = isDriftMode();
+  // ドリフト時は T 範囲が大きくなりやすい → T 軸を含む面は等尺を外してドリフトを見やすく
+  const useEqualScale = !(drift && (planeId === "tr" || planeId === "tn"));
+
+  const xaxis = {
+    title: xTitle,
+    gridcolor: "#30363d",
+    zerolinecolor: "#484f58",
+  };
+  if (useEqualScale) {
+    xaxis.scaleanchor = "y";
+    xaxis.scaleratio = 1;
+  }
+
   return {
     ...PLOT_LAYOUT_BASE,
     height,
-    xaxis: {
-      title: xTitle,
-      gridcolor: "#30363d",
-      zerolinecolor: "#484f58",
-      scaleanchor: "y",
-      scaleratio: 1,
-    },
+    xaxis,
     yaxis: {
       title: yTitle,
       gridcolor: "#30363d",
       zerolinecolor: "#484f58",
     },
-    showlegend: isDriftMode(),
+    showlegend: drift,
     legend: { font: { size: 10 } },
   };
 }
@@ -468,7 +499,33 @@ function computeOrbitsForDisplay(a_km, roe) {
   return { primary, reference };
 }
 
-function updateAllPlots() {
+function drawAllPlots(traces3d, layout3d, tr, tn, rn, forceNewPlot) {
+  const plotOpts = { responsive: true, displayModeBar: true };
+  const structureKey = getPlotStructureKey();
+  const useNewPlot =
+    forceNewPlot ||
+    !plotsInitialized ||
+    structureKey !== lastPlotStructureKey;
+
+  lastPlotStructureKey = structureKey;
+
+  const draw = useNewPlot ? Plotly.newPlot : Plotly.react;
+
+  if (useNewPlot && plotsInitialized) {
+    Plotly.purge("plot-3d");
+    Plotly.purge("plot-tr");
+    Plotly.purge("plot-tn");
+    Plotly.purge("plot-rn");
+  }
+
+  draw("plot-3d", traces3d, layout3d, plotOpts);
+  draw("plot-tr", tr.traces, tr.layout, plotOpts);
+  draw("plot-tn", tn.traces, tn.layout, plotOpts);
+  draw("plot-rn", rn.traces, rn.layout, plotOpts);
+  plotsInitialized = true;
+}
+
+function updateAllPlots(forceNewPlot = false) {
   const a_km = readSemiMajorAxisKm();
   const roe = readRoeFromSliders();
   const { primary, reference } = computeOrbitsForDisplay(a_km, roe);
@@ -482,20 +539,8 @@ function updateAllPlots() {
   const tr = build2DTraces(primary, PLANE_TR, reference);
   const tn = build2DTraces(primary, PLANE_TN, reference);
   const rn = build2DTraces(primary, PLANE_RN, reference);
-  const plotOpts = { responsive: true, displayModeBar: true };
 
-  if (!plotsInitialized) {
-    Plotly.newPlot("plot-3d", traces3d, layout3d, plotOpts);
-    Plotly.newPlot("plot-tr", tr.traces, tr.layout, plotOpts);
-    Plotly.newPlot("plot-tn", tn.traces, tn.layout, plotOpts);
-    Plotly.newPlot("plot-rn", rn.traces, rn.layout, plotOpts);
-    plotsInitialized = true;
-  } else {
-    Plotly.react("plot-3d", traces3d, layout3d);
-    Plotly.react("plot-tr", tr.traces, tr.layout);
-    Plotly.react("plot-tn", tn.traces, tn.layout);
-    Plotly.react("plot-rn", rn.traces, rn.layout);
-  }
+  drawAllPlots(traces3d, layout3d, tr, tn, rn, forceNewPlot);
 }
 
 // ---------------------------------------------------------------------------

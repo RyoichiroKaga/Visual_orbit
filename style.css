@@ -212,10 +212,16 @@ body {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.5;
+  white-space: pre-line;
   color: var(--deputy-color);
   background: var(--bg-deep);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.drift-rate--warn {
+  color: #f0883e;
+  border-color: rgba(240, 136, 62, 0.45);
 }
 
 .equation-drift {
