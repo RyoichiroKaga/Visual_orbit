@@ -243,6 +243,19 @@ body {
   margin-top: 0.5rem;
 }
 
+.eci-true-distance {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  white-space: pre-line;
+  color: var(--deputy-color);
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 /* Theory / equations */
 
 .theory .theory-intro {
