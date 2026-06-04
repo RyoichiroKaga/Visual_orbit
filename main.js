@@ -250,13 +250,54 @@ function buildChiefOrbitEci(a_km, numPoints) {
   return { x_km, y_km, z_km };
 }
 
+/** deputy サンプルと同じ u 上の chief 軌道（ズーム表示用） */
+function buildChiefOrbitEciFromSamples(a_km, samples) {
+  const x_km = [];
+  const y_km = [];
+  const z_km = [];
+
+  for (const sample of samples) {
+    const [x, y, z] = chiefPositionEciKm(a_km, sample.u_rad);
+    x_km.push(x);
+    y_km.push(y);
+    z_km.push(z);
+  }
+
+  return { x_km, y_km, z_km };
+}
+
+function buildEciOrbitData(a_km, primarySamples, referenceSamples) {
+  const fullScale = isEciFullScale();
+  const primaryEci = samplesToEciOrbit(a_km, primarySamples);
+  const referenceEci = referenceSamples
+    ? samplesToEciOrbit(a_km, referenceSamples)
+    : null;
+  const chiefOrbitEci = fullScale
+    ? buildChiefOrbitEci(a_km, CONFIG.ECI_CHIEF_ORBIT_POINTS)
+    : buildChiefOrbitEciFromSamples(a_km, primarySamples);
+
+  return { primaryEci, referenceEci, chiefOrbitEci, fullScale };
+}
+
+/** 有効な Plotly 軸範囲 [min, max] */
+function safeAxisRange(min, max, fallbackSpan = 10) {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return [-fallbackSpan / 2, fallbackSpan / 2];
+  }
+  if (min === max) {
+    const half = Math.max(Math.abs(min) * 0.01, fallbackSpan / 2);
+    return [min - half, max + half];
+  }
+  return [min, max];
+}
+
 function isEciFullScale() {
   const el = document.getElementById("eci-full-scale");
   return el ? el.checked : false;
 }
 
-/** ECI プロットの軸範囲 [km] */
-function computeEciAxisRanges(a_km, eciOrbits, fullScale) {
+/** ECI プロットの軸範囲 [km]（ズーム時は deputy のみ。chief 全周は範囲外になり WebGL が破綻しやすい） */
+function computeEciAxisRanges(a_km, deputyOrbits, fullScale) {
   if (fullScale) {
     const pad = a_km * 0.08;
     const lim = a_km + pad;
@@ -268,7 +309,7 @@ function computeEciAxisRanges(a_km, eciOrbits, fullScale) {
   }
 
   const coords = { x: [], y: [], z: [] };
-  for (const orbit of eciOrbits) {
+  for (const orbit of deputyOrbits) {
     if (!orbit) continue;
     coords.x.push(...orbit.x_km);
     coords.y.push(...orbit.y_km);
@@ -277,11 +318,12 @@ function computeEciAxisRanges(a_km, eciOrbits, fullScale) {
 
   const padRatio = CONFIG.ECI_ZOOM_PADDING_RATIO;
   const axisRange = (arr) => {
+    if (arr.length === 0) return safeAxisRange(-1, 1);
     const min = Math.min(...arr);
     const max = Math.max(...arr);
     const span = Math.max(max - min, 0.5);
     const pad = span * padRatio;
-    return [min - pad, max + pad];
+    return safeAxisRange(min - pad, max + pad);
   };
 
   return {
@@ -687,9 +729,11 @@ function buildEciLineTrace3D(orbit, name, color, width, dash) {
   };
 }
 
-function buildEciTraces3D(primaryEci, referenceEci, chiefOrbitEci) {
-  const traces = [
-    {
+function buildEciTraces3D(primaryEci, referenceEci, chiefOrbitEci, fullScale) {
+  const traces = [];
+
+  if (fullScale) {
+    traces.push({
       type: "scatter3d",
       mode: "markers",
       name: "地球（原点）",
@@ -698,15 +742,18 @@ function buildEciTraces3D(primaryEci, referenceEci, chiefOrbitEci) {
       z: [0],
       marker: { color: "#6e9fef", size: 5, symbol: "circle" },
       hovertemplate: "地心 ECI 原点<extra></extra>",
-    },
+    });
+  }
+
+  traces.push(
     buildEciLineTrace3D(
       chiefOrbitEci,
-      "Chief 軌道",
-      "rgba(240, 193, 75, 0.65)",
+      fullScale ? "Chief 軌道" : "Chief（同位相区間）",
+      "rgba(240, 193, 75, 0.85)",
       2,
-      "dot"
-    ),
-  ];
+      null
+    )
+  );
 
   if (referenceEci) {
     traces.push(
@@ -749,7 +796,7 @@ function layoutEci3D(axisRanges) {
       yaxis: { title: "Y [km]", range: axisRanges.y, ...axisStyle },
       zaxis: { title: "Z [km]", range: axisRanges.z, ...axisStyle },
       bgcolor: "#1c2333",
-      aspectmode: "cube",
+      aspectmode: "data",
       camera: { eye: { x: 1.35, y: 1.25, z: 0.85 } },
     },
   };
@@ -791,17 +838,17 @@ function layoutEci2D(xTitle, yTitle, height, axisRanges) {
   };
 }
 
-function buildEci2DTraces(primaryEci, referenceEci, chiefOrbitEci, plane) {
+function buildEci2DTraces(primaryEci, referenceEci, chiefOrbitEci, plane, fullScale) {
   const { axisX, axisY, xTitle, yTitle } = plane;
   const traces = [
     buildEci2DTrace(
       chiefOrbitEci,
       axisX,
       axisY,
-      "Chief 軌道",
-      "rgba(240, 193, 75, 0.65)",
+      fullScale ? "Chief 軌道" : "Chief（同位相区間）",
+      "rgba(240, 193, 75, 0.85)",
       1.5,
-      "dot"
+      fullScale ? "dot" : "solid"
     ),
   ];
 
@@ -831,17 +878,10 @@ function buildEci2DTraces(primaryEci, referenceEci, chiefOrbitEci, plane) {
     )
   );
 
+  const deputyOnly = [primaryEci, referenceEci];
   const axisRanges = {
-    x: computeEciAxisRangesForPlane(
-      [primaryEci, referenceEci, chiefOrbitEci],
-      axisX,
-      isEciFullScale()
-    ),
-    y: computeEciAxisRangesForPlane(
-      [primaryEci, referenceEci, chiefOrbitEci],
-      axisY,
-      isEciFullScale()
-    ),
+    x: computeEciAxisRangesForPlane(deputyOnly, axisX, fullScale),
+    y: computeEciAxisRangesForPlane(deputyOnly, axisY, fullScale),
   };
 
   return { traces, layout: layoutEci2D(xTitle, yTitle, 260, axisRanges) };
@@ -860,11 +900,13 @@ function computeEciAxisRangesForPlane(orbits, axisKey, fullScale) {
     values.push(...orbit[axisKey]);
   }
 
+  if (values.length === 0) return safeAxisRange(-1, 1);
+
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = Math.max(max - min, 0.5);
   const pad = span * CONFIG.ECI_ZOOM_PADDING_RATIO;
-  return [min - pad, max + pad];
+  return safeAxisRange(min - pad, max + pad);
 }
 
 const PLANE_ECI_XY = {
@@ -898,6 +940,32 @@ function updateEciCaption(fullScale) {
     : "deputy 軌跡付近に自動ズーム。δi 成分は Z 方向の振動として現れます。";
 }
 
+function plotDivExists(id) {
+  return Boolean(document.getElementById(id));
+}
+
+function drawPlot(divId, traces, layout, useNewPlot, plotOpts) {
+  if (!plotDivExists(divId)) {
+    console.warn(`Plot container #${divId} not found`);
+    return Promise.resolve();
+  }
+
+  if (useNewPlot) {
+    return Plotly.newPlot(divId, traces, layout, plotOpts);
+  }
+  return Plotly.react(divId, traces, layout);
+}
+
+function schedulePlotResize() {
+  requestAnimationFrame(() => {
+    for (const id of PLOT_DIV_IDS) {
+      if (plotDivExists(id)) {
+        Plotly.Plots.resize(id);
+      }
+    }
+  });
+}
+
 function drawAllPlots(plotBundle, forceNewPlot) {
   const plotOpts = { responsive: true, displayModeBar: true };
   const structureKey = getPlotStructureKey();
@@ -908,11 +976,11 @@ function drawAllPlots(plotBundle, forceNewPlot) {
 
   lastPlotStructureKey = structureKey;
 
-  const draw = useNewPlot ? Plotly.newPlot : Plotly.react;
-
   if (useNewPlot && plotsInitialized) {
     for (const id of PLOT_DIV_IDS) {
-      Plotly.purge(id);
+      if (plotDivExists(id)) {
+        Plotly.purge(id);
+      }
     }
   }
 
@@ -929,14 +997,25 @@ function drawAllPlots(plotBundle, forceNewPlot) {
     eciYz,
   } = plotBundle;
 
-  draw("plot-3d", traces3d, layout3d, plotOpts);
-  draw("plot-tr", tr.traces, tr.layout, plotOpts);
-  draw("plot-tn", tn.traces, tn.layout, plotOpts);
-  draw("plot-rn", rn.traces, rn.layout, plotOpts);
-  draw("plot-eci-3d", tracesEci3d, layoutEci3d, plotOpts);
-  draw("plot-eci-xy", eciXy.traces, eciXy.layout, plotOpts);
-  draw("plot-eci-xz", eciXz.traces, eciXz.layout, plotOpts);
-  draw("plot-eci-yz", eciYz.traces, eciYz.layout, plotOpts);
+  Promise.all([
+    drawPlot("plot-3d", traces3d, layout3d, useNewPlot, plotOpts),
+    drawPlot("plot-tr", tr.traces, tr.layout, useNewPlot, plotOpts),
+    drawPlot("plot-tn", tn.traces, tn.layout, useNewPlot, plotOpts),
+    drawPlot("plot-rn", rn.traces, rn.layout, useNewPlot, plotOpts),
+    drawPlot("plot-eci-3d", tracesEci3d, layoutEci3d, useNewPlot, plotOpts),
+    drawPlot("plot-eci-xy", eciXy.traces, eciXy.layout, useNewPlot, plotOpts),
+    drawPlot("plot-eci-xz", eciXz.traces, eciXz.layout, useNewPlot, plotOpts),
+    drawPlot("plot-eci-yz", eciYz.traces, eciYz.layout, useNewPlot, plotOpts),
+  ])
+    .then(schedulePlotResize)
+    .catch((err) => {
+      console.error("Plotly draw failed:", err);
+      const cap = document.getElementById("plot-eci-caption");
+      if (cap) {
+        cap.textContent = `プロット描画エラー: ${err.message}`;
+      }
+    });
+
   plotsInitialized = true;
 }
 
@@ -956,21 +1035,13 @@ function updateAllPlots(forceNewPlot = false) {
   const tn = build2DTraces(primary, PLANE_TN, reference);
   const rn = build2DTraces(primary, PLANE_RN, reference);
 
-  const primaryEci = samplesToEciOrbit(a_km, primarySamples);
-  const referenceEci = referenceSamples
-    ? samplesToEciOrbit(a_km, referenceSamples)
-    : null;
-  const chiefOrbitEci = buildChiefOrbitEci(
-    a_km,
-    CONFIG.ECI_CHIEF_ORBIT_POINTS
-  );
-
-  const eciFullScale = isEciFullScale();
+  const { primaryEci, referenceEci, chiefOrbitEci, fullScale: eciFullScale } =
+    buildEciOrbitData(a_km, primarySamples, referenceSamples);
   updateEciCaption(eciFullScale);
 
   const axisRanges3d = computeEciAxisRanges(
     a_km,
-    [primaryEci, referenceEci, chiefOrbitEci],
+    [primaryEci, referenceEci],
     eciFullScale
   );
 
@@ -980,25 +1051,33 @@ function updateAllPlots(forceNewPlot = false) {
     tr,
     tn,
     rn,
-    tracesEci3d: buildEciTraces3D(primaryEci, referenceEci, chiefOrbitEci),
+    tracesEci3d: buildEciTraces3D(
+      primaryEci,
+      referenceEci,
+      chiefOrbitEci,
+      eciFullScale
+    ),
     layoutEci3d: layoutEci3D(axisRanges3d),
     eciXy: buildEci2DTraces(
       primaryEci,
       referenceEci,
       chiefOrbitEci,
-      PLANE_ECI_XY
+      PLANE_ECI_XY,
+      eciFullScale
     ),
     eciXz: buildEci2DTraces(
       primaryEci,
       referenceEci,
       chiefOrbitEci,
-      PLANE_ECI_XZ
+      PLANE_ECI_XZ,
+      eciFullScale
     ),
     eciYz: buildEci2DTraces(
       primaryEci,
       referenceEci,
       chiefOrbitEci,
-      PLANE_ECI_YZ
+      PLANE_ECI_YZ,
+      eciFullScale
     ),
   };
 
