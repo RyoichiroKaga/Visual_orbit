@@ -13,8 +13,14 @@ const CONFIG = {
   SLIDER_MAX: 1.0e-3,
   SLIDER_STEP: 1.0e-5,
 
-  /** 1 周分のサンプル点数 */
+  /** 1 周あたりのサンプル点数 */
   NUM_ORBIT_POINTS: 400,
+
+  /** 時間ドリフト表示のデフォルト周回数 */
+  DEFAULT_NUM_DRIFT_ORBITS: 5,
+
+  /** 地球重力定数 [km³/s²]（平均運動 n の計算用） */
+  MU_EARTH_KM3_S2: 398600.4418,
 
   /** chief 半長軸の初期値 [km]（GEO 想定） */
   DEFAULT_SEMI_MAJOR_AXIS_KM: 42164,
@@ -41,6 +47,7 @@ const ROE_FIELDS = [
 ];
 
 const TWO_PI = 2 * Math.PI;
+const DRIFT_LAMBDA_FACTOR = 1.5; // δλ̇ = -(3/2) n δa
 
 // Plotly 用の共通スタイル（ダークテーマに合わせる）
 const PLOT_LAYOUT_BASE = {
@@ -51,32 +58,42 @@ const PLOT_LAYOUT_BASE = {
 };
 
 // ---------------------------------------------------------------------------
-// ROE → RTN 変換
+// 軌道力学
 // ---------------------------------------------------------------------------
 
+/** 近円 chief 軌道の平均運動 [rad/s] */
+function chiefMeanMotionRadS(a_km) {
+  return Math.sqrt(CONFIG.MU_EARTH_KM3_S2 / (a_km * a_km * a_km));
+}
+
 /**
- * 引数緯度 u [rad] における RTN 相対位置 [km] を計算
- * @param {number} a_km - chief 半長軸 [km]
- * @param {object} roe - 無次元 ROE
- * @param {number} u_rad - argument of latitude [rad]
+ * δa による along-track セクラー変化（近円・線形 ROE）
+ * @returns {number} δλ(t) [無次元]
  */
-function rtnAtLatitude(a_km, roe, u_rad) {
-  const { delta_a, delta_lambda, delta_ex, delta_ey, delta_ix, delta_iy } = roe;
+function deltaLambdaAtTimeSec(roe, n_rad_s, t_sec) {
+  return roe.delta_lambda - DRIFT_LAMBDA_FACTOR * n_rad_s * roe.delta_a * t_sec;
+}
+
+/**
+ * 引数緯度 u [rad] における RTN 相対位置 [km]
+ * @param {number|null} deltaLambdaOverride - 指定時は roe.delta_lambda の代わりに使用
+ */
+function rtnAtLatitude(a_km, roe, u_rad, deltaLambdaOverride = null) {
+  const delta_lambda =
+    deltaLambdaOverride !== null ? deltaLambdaOverride : roe.delta_lambda;
+  const { delta_a, delta_ex, delta_ey, delta_ix, delta_iy } = roe;
   const cu = Math.cos(u_rad);
   const su = Math.sin(u_rad);
 
-  const R_km =
-    a_km * (delta_a - delta_ex * cu - delta_ey * su);
-  const T_km =
-    a_km * (delta_lambda + 2 * delta_ex * su - 2 * delta_ey * cu);
+  const R_km = a_km * (delta_a - delta_ex * cu - delta_ey * su);
+  const T_km = a_km * (delta_lambda + 2 * delta_ex * su - 2 * delta_ey * cu);
   const N_km = a_km * (delta_ix * su - delta_iy * cu);
 
   return { R_km, T_km, N_km };
 }
 
 /**
- * u = 0 … 2π で 1 周分の相対軌道をサンプリング
- * @returns {{ R_km: number[], T_km: number[], N_km: number[] }}
+ * u = 0 … 2π で 1 周分（δλ 固定の閉曲線）
  */
 function computeRelativeOrbitRTN(a_km, roe, numPoints) {
   const R_km = [];
@@ -84,7 +101,6 @@ function computeRelativeOrbitRTN(a_km, roe, numPoints) {
   const N_km = [];
 
   for (let i = 0; i < numPoints; i++) {
-    // 端点を含めて閉じた軌道にする（i=0 → u=0, i=n-1 → u=2π）
     const u_rad = (TWO_PI * i) / (numPoints - 1);
     const pos = rtnAtLatitude(a_km, roe, u_rad);
     R_km.push(pos.R_km);
@@ -95,11 +111,44 @@ function computeRelativeOrbitRTN(a_km, roe, numPoints) {
   return { R_km, T_km, N_km };
 }
 
+/**
+ * 複数周回の時間ドリフト軌跡
+ * 各点で t = k·(2π/n) + u/n、δλ(t) を用いて T 方向ドリフトを表現
+ */
+function computeDriftTrajectoryRTN(a_km, roe, numPointsPerOrbit, numOrbits) {
+  const n_rad_s = chiefMeanMotionRadS(a_km);
+  const orbitPeriodSec = TWO_PI / n_rad_s;
+  const R_km = [];
+  const T_km = [];
+  const N_km = [];
+
+  for (let k = 0; k < numOrbits; k++) {
+    for (let i = 0; i < numPointsPerOrbit; i++) {
+      // 最後の周の終端以外で点を重複させない
+      if (k > 0 && i === 0) continue;
+
+      const u_rad = (TWO_PI * i) / (numPointsPerOrbit - 1);
+      const t_sec = k * orbitPeriodSec + u_rad / n_rad_s;
+      const delta_lambda_t = deltaLambdaAtTimeSec(roe, n_rad_s, t_sec);
+      const pos = rtnAtLatitude(a_km, roe, u_rad, delta_lambda_t);
+      R_km.push(pos.R_km);
+      T_km.push(pos.T_km);
+      N_km.push(pos.N_km);
+    }
+  }
+
+  return { R_km, T_km, N_km, n_rad_s, orbitPeriodSec };
+}
+
+/** 1 軌道周期あたりの along-track ドリフト量 [km] */
+function alongTrackDriftPerOrbitKm(a_km, delta_a) {
+  return -DRIFT_LAMBDA_FACTOR * TWO_PI * a_km * delta_a;
+}
+
 // ---------------------------------------------------------------------------
 // UI ヘルパ
 // ---------------------------------------------------------------------------
 
-/** 科学記数法風の表示（小さい ROE 向け） */
 function formatRoeValue(value) {
   const abs = Math.abs(value);
   if (abs === 0) return "0";
@@ -122,6 +171,54 @@ function readRoeFromSliders() {
   return roe;
 }
 
+function isDriftMode() {
+  const selected = document.querySelector('input[name="display-mode"]:checked');
+  return selected && selected.value === "drift";
+}
+
+function readNumDriftOrbits() {
+  const el = document.getElementById("num-drift-orbits");
+  const v = parseInt(el.value, 10);
+  return Number.isFinite(v) && v >= 1 ? v : CONFIG.DEFAULT_NUM_DRIFT_ORBITS;
+}
+
+function updateDriftRateDisplay(a_km, roe) {
+  const el = document.getElementById("drift-rate-display");
+  if (!el) return;
+
+  const n = chiefMeanMotionRadS(a_km);
+  const dDeltaLambdaDt = -DRIFT_LAMBDA_FACTOR * n * roe.delta_a;
+  const driftPerOrbitKm = alongTrackDriftPerOrbitKm(a_km, roe.delta_a);
+  const periodHr = (TWO_PI / n) / 3600;
+
+  el.textContent =
+    `δλ̇ = ${formatRoeValue(dDeltaLambdaDt)} /s\n` +
+    `1 周あたり ΔT ≈ ${driftPerOrbitKm.toFixed(3)} km\n` +
+    `T_orbit ≈ ${(periodHr).toFixed(2)} h`;
+}
+
+function updateModeUI() {
+  const driftMode = isDriftMode();
+  const driftControls = document.getElementById("drift-controls");
+  const modeHint = document.getElementById("mode-hint");
+  const caption = document.getElementById("plot-3d-caption");
+
+  driftControls.hidden = !driftMode;
+
+  if (driftMode) {
+    modeHint.textContent =
+      "δλ(t) = δλ₀ − (3/2)nδa·t を用い、複数周の開いた軌跡を表示";
+    caption.textContent =
+      "時間ドリフト: δa ≠ 0 で T 方向にセクラー変化（複数周分）";
+    updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeFromSliders());
+  } else {
+    modeHint.textContent =
+      "固定 ROE で u を 1 周 → 閉じた相対軌道";
+    caption.textContent =
+      "横軸: T、縦軸: R、奥行き: N（chief は原点）";
+  }
+}
+
 function initSliders() {
   const { SLIDER_MIN, SLIDER_MAX, SLIDER_STEP, ROE_DEFAULTS } = CONFIG;
 
@@ -137,9 +234,35 @@ function initSliders() {
 
     slider.addEventListener("input", () => {
       output.textContent = formatRoeValue(parseFloat(slider.value, 10));
+      updateModeUI();
       updateAllPlots();
     });
   }
+}
+
+function initModeControls() {
+  document.querySelectorAll('input[name="display-mode"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      updateModeUI();
+      updateAllPlots();
+    });
+  });
+
+  const orbitSlider = document.getElementById("num-drift-orbits");
+  const orbitOutput = document.getElementById("val-num-drift-orbits");
+  orbitSlider.value = String(CONFIG.DEFAULT_NUM_DRIFT_ORBITS);
+  orbitOutput.textContent = String(CONFIG.DEFAULT_NUM_DRIFT_ORBITS);
+
+  orbitSlider.addEventListener("input", () => {
+    orbitOutput.textContent = orbitSlider.value;
+    updateAllPlots();
+  });
+
+  document
+    .getElementById("show-single-orbit-ref")
+    .addEventListener("change", updateAllPlots);
+
+  updateModeUI();
 }
 
 // ---------------------------------------------------------------------------
@@ -148,22 +271,8 @@ function initSliders() {
 
 let plotsInitialized = false;
 
-function buildOrbitTraces(orbit) {
-  const { T_km, R_km, N_km } = orbit;
-
-  const deputyTrace = {
-    type: "scatter3d",
-    mode: "lines",
-    name: "Deputy（相対軌道）",
-    x: T_km,
-    y: R_km,
-    z: N_km,
-    line: { color: "#3fb950", width: 4 },
-    hovertemplate:
-      "T: %{x:.3f} km<br>R: %{y:.3f} km<br>N: %{z:.3f} km<extra></extra>",
-  };
-
-  const chiefTrace = {
+function buildChiefTrace3D() {
+  return {
     type: "scatter3d",
     mode: "markers",
     name: "Chief（原点）",
@@ -173,8 +282,47 @@ function buildOrbitTraces(orbit) {
     marker: { color: "#f0c14b", size: 6, symbol: "diamond" },
     hovertemplate: "Chief @ 原点<extra></extra>",
   };
+}
 
-  return [deputyTrace, chiefTrace];
+function buildDeputyTrace3D(orbit, name, color, width) {
+  return {
+    type: "scatter3d",
+    mode: "lines",
+    name,
+    x: orbit.T_km,
+    y: orbit.R_km,
+    z: orbit.N_km,
+    line: { color, width },
+    hovertemplate:
+      "T: %{x:.3f} km<br>R: %{y:.3f} km<br>N: %{z:.3f} km<extra></extra>",
+  };
+}
+
+function buildOrbitTraces3D(primaryOrbit, referenceOrbit) {
+  const traces = [];
+
+  if (referenceOrbit) {
+    traces.push(
+      buildDeputyTrace3D(
+        referenceOrbit,
+        "参考: 1 周（δλ 固定）",
+        "rgba(139, 148, 158, 0.55)",
+        2
+      )
+    );
+  }
+
+  traces.push(
+    buildDeputyTrace3D(
+      primaryOrbit,
+      isDriftMode() ? "Deputy（ドリフト軌跡）" : "Deputy（相対軌道）",
+      "#3fb950",
+      4
+    ),
+    buildChiefTrace3D()
+  );
+
+  return traces;
 }
 
 function layout3D() {
@@ -189,21 +337,22 @@ function layout3D() {
       zaxis: { title: "N [km]", gridcolor: "#30363d", zerolinecolor: "#484f58" },
       bgcolor: "#1c2333",
       aspectmode: "data",
-      camera: {
-        eye: { x: 1.4, y: 1.2, z: 0.9 },
-      },
+      camera: { eye: { x: 1.4, y: 1.2, z: 0.9 } },
     },
   };
 }
 
-function build2DTrace(x, y, name, color) {
+function build2DTrace(x, y, name, color, width = 2, dash = null) {
+  const line = { color, width };
+  if (dash) line.dash = dash;
+
   return {
     type: "scatter",
     mode: "lines",
     name,
     x,
     y,
-    line: { color, width: 2 },
+    line,
     hovertemplate: "%{fullData.name}: %{x:.3f}, %{y:.3f} km<extra></extra>",
   };
 }
@@ -221,6 +370,59 @@ function buildChief2D() {
   };
 }
 
+function build2DTraces(orbit, plane, referenceOrbit) {
+  const traces = [];
+  const { axisX, axisY, xTitle, yTitle, color } = plane;
+
+  if (referenceOrbit) {
+    traces.push(
+      build2DTrace(
+        referenceOrbit[axisX],
+        referenceOrbit[axisY],
+        "参考: 1 周",
+        "rgba(139, 148, 158, 0.7)",
+        1.5,
+        "dot"
+      )
+    );
+  }
+
+  traces.push(
+    build2DTrace(
+      orbit[axisX],
+      orbit[axisY],
+      isDriftMode() ? "ドリフト軌跡" : "相対軌道",
+      color,
+      2
+    ),
+    buildChief2D()
+  );
+
+  return { traces, layout: layout2D(xTitle, yTitle, 260) };
+}
+
+const PLANE_TR = {
+  axisX: "T_km",
+  axisY: "R_km",
+  xTitle: "T [km]",
+  yTitle: "R [km]",
+  color: "#3fb950",
+};
+const PLANE_TN = {
+  axisX: "T_km",
+  axisY: "N_km",
+  xTitle: "T [km]",
+  yTitle: "N [km]",
+  color: "#58a6ff",
+};
+const PLANE_RN = {
+  axisX: "R_km",
+  axisY: "N_km",
+  xTitle: "R [km]",
+  yTitle: "N [km]",
+  color: "#a371f7",
+};
+
 function layout2D(xTitle, yTitle, height) {
   return {
     ...PLOT_LAYOUT_BASE,
@@ -237,84 +439,62 @@ function layout2D(xTitle, yTitle, height) {
       gridcolor: "#30363d",
       zerolinecolor: "#484f58",
     },
-    showlegend: false,
+    showlegend: isDriftMode(),
+    legend: { font: { size: 10 } },
   };
+}
+
+function computeOrbitsForDisplay(a_km, roe) {
+  const numPoints = CONFIG.NUM_ORBIT_POINTS;
+
+  if (!isDriftMode()) {
+    const orbit = computeRelativeOrbitRTN(a_km, roe, numPoints);
+    return { primary: orbit, reference: null };
+  }
+
+  const numOrbits = readNumDriftOrbits();
+  const primary = computeDriftTrajectoryRTN(
+    a_km,
+    roe,
+    numPoints,
+    numOrbits
+  );
+
+  const showRef = document.getElementById("show-single-orbit-ref").checked;
+  const reference = showRef
+    ? computeRelativeOrbitRTN(a_km, roe, numPoints)
+    : null;
+
+  return { primary, reference };
 }
 
 function updateAllPlots() {
   const a_km = readSemiMajorAxisKm();
   const roe = readRoeFromSliders();
-  const orbit = computeRelativeOrbitRTN(
-    a_km,
-    roe,
-    CONFIG.NUM_ORBIT_POINTS
-  );
+  const { primary, reference } = computeOrbitsForDisplay(a_km, roe);
 
-  const traces3d = buildOrbitTraces(orbit);
+  if (isDriftMode()) {
+    updateDriftRateDisplay(a_km, roe);
+  }
+
+  const traces3d = buildOrbitTraces3D(primary, reference);
   const layout3d = layout3D();
-
+  const tr = build2DTraces(primary, PLANE_TR, reference);
+  const tn = build2DTraces(primary, PLANE_TN, reference);
+  const rn = build2DTraces(primary, PLANE_RN, reference);
   const plotOpts = { responsive: true, displayModeBar: true };
 
   if (!plotsInitialized) {
     Plotly.newPlot("plot-3d", traces3d, layout3d, plotOpts);
-
-    Plotly.newPlot(
-      "plot-tr",
-      [
-        build2DTrace(orbit.T_km, orbit.R_km, "相対軌道", "#3fb950"),
-        buildChief2D(),
-      ],
-      layout2D("T [km]", "R [km]", 260),
-      plotOpts
-    );
-
-    Plotly.newPlot(
-      "plot-tn",
-      [
-        build2DTrace(orbit.T_km, orbit.N_km, "相対軌道", "#58a6ff"),
-        buildChief2D(),
-      ],
-      layout2D("T [km]", "N [km]", 260),
-      plotOpts
-    );
-
-    Plotly.newPlot(
-      "plot-rn",
-      [
-        build2DTrace(orbit.R_km, orbit.N_km, "相対軌道", "#a371f7"),
-        buildChief2D(),
-      ],
-      layout2D("R [km]", "N [km]", 260),
-      plotOpts
-    );
-
+    Plotly.newPlot("plot-tr", tr.traces, tr.layout, plotOpts);
+    Plotly.newPlot("plot-tn", tn.traces, tn.layout, plotOpts);
+    Plotly.newPlot("plot-rn", rn.traces, rn.layout, plotOpts);
     plotsInitialized = true;
   } else {
     Plotly.react("plot-3d", traces3d, layout3d);
-    Plotly.react(
-      "plot-tr",
-      [
-        build2DTrace(orbit.T_km, orbit.R_km, "相対軌道", "#3fb950"),
-        buildChief2D(),
-      ],
-      layout2D("T [km]", "R [km]", 260)
-    );
-    Plotly.react(
-      "plot-tn",
-      [
-        build2DTrace(orbit.T_km, orbit.N_km, "相対軌道", "#58a6ff"),
-        buildChief2D(),
-      ],
-      layout2D("T [km]", "N [km]", 260)
-    );
-    Plotly.react(
-      "plot-rn",
-      [
-        build2DTrace(orbit.R_km, orbit.N_km, "相対軌道", "#a371f7"),
-        buildChief2D(),
-      ],
-      layout2D("R [km]", "N [km]", 260)
-    );
+    Plotly.react("plot-tr", tr.traces, tr.layout);
+    Plotly.react("plot-tn", tn.traces, tn.layout);
+    Plotly.react("plot-rn", rn.traces, rn.layout);
   }
 }
 
@@ -324,10 +504,17 @@ function updateAllPlots() {
 
 function init() {
   initSliders();
+  initModeControls();
 
   const semiMajorInput = document.getElementById("semi-major-axis");
-  semiMajorInput.addEventListener("input", updateAllPlots);
-  semiMajorInput.addEventListener("change", updateAllPlots);
+  semiMajorInput.addEventListener("input", () => {
+    updateModeUI();
+    updateAllPlots();
+  });
+  semiMajorInput.addEventListener("change", () => {
+    updateModeUI();
+    updateAllPlots();
+  });
 
   window.addEventListener("resize", () => {
     if (plotsInitialized) {

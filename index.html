@@ -85,15 +85,56 @@
         </div>
       </section>
 
+      <section class="panel-section">
+        <h2>表示モード</h2>
+        <div class="mode-options">
+          <label class="mode-option">
+            <input type="radio" name="display-mode" value="single" checked>
+            <span>1 周（<var>u</var> のみ）</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="display-mode" value="drift">
+            <span>時間ドリフト（δ<var>a</var>）</span>
+          </label>
+        </div>
+        <p class="section-hint mode-hint" id="mode-hint">
+          固定 ROE で <var>u</var> を 1 周 → 閉じた相対軌道
+        </p>
+
+        <div id="drift-controls" class="drift-controls" hidden>
+          <label class="field-label" for="num-drift-orbits">
+            表示軌道周回数
+          </label>
+          <div class="roe-header">
+            <input
+              type="range"
+              id="num-drift-orbits"
+              class="roe-slider"
+              min="1"
+              max="20"
+              step="1"
+              value="5"
+            >
+            <output id="val-num-drift-orbits" for="num-drift-orbits">5</output>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show-single-orbit-ref" checked>
+            参考: 1 周の閉曲線を重ね表示
+          </label>
+          <p class="drift-rate" id="drift-rate-display"></p>
+        </div>
+      </section>
+
       <section class="panel-section theory">
         <h2>使用する近似式</h2>
         <p class="theory-intro">
-          近円軌道・小さい相対運動を仮定した線形近似。引数緯度 <var>u</var> [rad] を 0 から 2π まで変化させて 1 周分を描画します。
+          近円軌道・小さい相対運動を仮定した線形近似。
         </p>
         <div class="equations">
           <p><var>R</var> = <var>a</var> (δ<var>a</var> − δ<var>e</var><sub>x</sub> cos <var>u</var> − δ<var>e</var><sub>y</sub> sin <var>u</var>)</p>
           <p><var>T</var> = <var>a</var> (δλ + 2 δ<var>e</var><sub>x</sub> sin <var>u</var> − 2 δ<var>e</var><sub>y</sub> cos <var>u</var>)</p>
           <p><var>N</var> = <var>a</var> (δ<var>i</var><sub>x</sub> sin <var>u</var> − δ<var>i</var><sub>y</sub> cos <var>u</var>)</p>
+          <p class="equation-drift">δλ(<var>t</var>) = δλ<sub>0</sub> − (3/2) <var>n</var> δ<var>a</var> <var>t</var></p>
         </div>
         <ul class="axis-legend">
           <li><strong>R</strong> — Radial [km]</li>
@@ -106,7 +147,7 @@
     <div class="plot-area">
       <section class="plot-block plot-block--main">
         <h2 class="plot-title">3D — RTN 相対軌道</h2>
-        <p class="plot-caption">横軸: T、縦軸: R、奥行き: N（chief は原点）</p>
+        <p class="plot-caption" id="plot-3d-caption">横軸: T、縦軸: R、奥行き: N（chief は原点）</p>
         <div id="plot-3d" class="plot-container"></div>
       </section>
 
