@@ -12,16 +12,14 @@ Relative Orbital Elements（ROE）の各パラメータをスライダーで調�
 
 ## ROE（Relative Orbital Elements）とは
 
-ROE は、chief 衛星の軌道に対する deputy 衛星の相対運動を、6 つの無次元パラメータで表現する記述です。本アプリでは次の 6 成分を使用します。
+ROE は、chief 衛星の軌道に対する deputy 衛星の相対運動を、6 つの無次元パラメータで表現する記述です。本アプリのスライダーは **km スケール**（\(a \cdot \delta\) に相当）で操作し、内部で \(\delta = \text{値}/a\) に変換します。
 
-| 記号 | 意味（概念） |
-|------|----------------|
-| δa | 半長軸の相対差 |
-| δλ | 平均経度差（along-track 方向の位相に関連） |
-| δe_x, δe_y | 離心率ベクトルの成分 |
-| δi_x, δi_y | 傾斜角ベクトルの成分 |
-
-各成分を独立に変えると、閉じた相対軌道の形（楕円・ねじれなど）がどう変わるかを、目で追いやすくします。
+| UI [km] | 対応する δ | 主な RTN への効き |
+|---------|-----------|------------------|
+| \(a \cdot \delta a\) | 半長軸差 | R オフセット、along-track ドリフト |
+| \(a \cdot \delta\lambda\) | 平均経度差 | T オフセット |
+| \(a \cdot \delta e_x,\ \delta e_y\) | 離心率ベクトル | R–T 平面の楕円 |
+| \(a \cdot \delta i_x,\ \delta i_y\) | 傾斜角ベクトル | N 方向の振動 |
 
 ## RTN 座標系
 
@@ -33,21 +31,20 @@ chief 衛星を基準とした局所直交座標系です。
 
 本アプリの RTN 3D プロットでは、横軸 **T**、縦軸 **R**、奥行き **N** [km] とし、chief を原点に表示します。
 
-### ECI（Earth-Centered Inertial）表示
+### ECI（Earth-Centered Inertial）— 誇張表示
 
-赤道面内の**近円 chief 軌道**を仮定し、各サンプル点で RTN 基底を ECI に取り込んで絶対位置を計算します。
+GEO スケールでは実際の相対変位（km オーダ）が chief 軌道（約 4 万 km）に対して小さすぎるため、**表示専用の誇張倍率** \(k\) を用います。
 
 \[
-\mathbf{r}_{\mathrm{deputy}}^{\mathrm{ECI}}
+\mathbf{r}_{\mathrm{display}}^{\mathrm{ECI}}
 = \mathbf{r}_{\mathrm{chief}}^{\mathrm{ECI}}
-+ R\,\hat{\mathbf{R}} + T\,\hat{\mathbf{T}} + N\,\hat{\mathbf{N}}
++ k\left(\mathbf{r}_{\mathrm{deputy}}^{\mathrm{ECI}} - \mathbf{r}_{\mathrm{chief}}^{\mathrm{ECI}}\right)
 \]
 
-- \(\hat{\mathbf{R}}\): 地心 → chief 方向（単位ベクトル）
-- \(\hat{\mathbf{T}}\): chief 速度方向（近円・赤道軌道で \([-\sin u,\ \cos u,\ 0]\)）
-- \(\hat{\mathbf{N}} = \hat{\mathbf{R}} \times \hat{\mathbf{T}}\)（赤道軌道では \([0,0,1]\)）
-
-**デフォルトは deputy 軌跡付近に自動ズーム**（GEO スケールでは相対変位が見えないため）。チェックボックスで chief 全軌道スケールに切り替え可能です。
+- \(k = 1\) … 実スケール（deputy は chief にほぼ重なる）
+- \(k = 10^3\) … デフォルト（デモ向け）
+- 相対形状の厳密な km 値は **RTN プロット**を参照
+- **地球** … 赤道面（\(z=0\)）上に \(R_\oplus \approx 6378\) km の円（ワイヤーフレーム球の赤道断面、実スケール）
 
 ## 使用している近似式
 
@@ -62,24 +59,18 @@ N &= a\,(\delta i_x \sin u - \delta i_y \cos u)
 \]
 
 - \(a\) … chief 軌道の半長軸 [km]
-- \(u\) … 0 から \(2\pi\) まで変化させ、1 周分の相対軌道を描画
+- \(u\) … 各周で 0 から \(2\pi\)、複数周分を連続表示
 
-### 表示モード
-
-| モード | 内容 |
-|--------|------|
-| **1 周（u のみ）** | δλ を固定したまま \(u\) を 1 周 → **閉じた**相対軌道。δa は R 方向のオフセットのみ |
-| **時間ドリフト（δa）** | 近円軌道のセクラー変化 \(\dot{\delta\lambda} = -\frac{3}{2} n \delta a\) を積分し、複数周分の **開いた**軌跡を表示 |
-
-時間ドリフトモードでは、各サンプル点で
+### 時間ドリフト（常時適用）
 
 \[
 \delta\lambda(t) = \delta\lambda_0 - \frac{3}{2}\, n\, \delta a\, t, \quad
 t = k\frac{2\pi}{n} + \frac{u}{n}
 \]
 
-とし、上記の \(R,T,N\) 式に代入します（\(n=\sqrt{\mu/a^3}\) [rad/s]）。  
-δa ≠ 0 のとき、T–R 平面などで along-track 方向へのドリフト（ねじれ軌跡）が確認できます。
+- \(n=\sqrt{\mu/a^3}\) [rad/s]
+- **Δa = 0 km** のときは各周が同じ閉曲線に重なる（周回数 1 推奨）
+- **Δa ≠ 0** のとき along-track 方向へ周回ごとにずれる
 
 ## ファイル構成
 

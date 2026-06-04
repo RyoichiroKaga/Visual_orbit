@@ -8,10 +8,10 @@
 // ---------------------------------------------------------------------------
 
 const CONFIG = {
-  /** スライダー範囲 [無次元] */
-  SLIDER_MIN: -1.0e-3,
-  SLIDER_MAX: 1.0e-3,
-  SLIDER_STEP: 1.0e-5,
+  /** スライダー範囲 [km]（線形近似: 無次元 ROE ≈ 値/a） */
+  SLIDER_MIN_KM: -50,
+  SLIDER_MAX_KM: 50,
+  SLIDER_STEP_KM: 0.5,
 
   /** 1 周あたりのサンプル点数 */
   NUM_ORBIT_POINTS: 400,
@@ -22,8 +22,17 @@ const CONFIG = {
   /** ECI 表示用 chief 軌道のサンプル点数 */
   ECI_CHIEF_ORBIT_POINTS: 360,
 
-  /** deputy 付近ズーム時の軸余白比率 */
+  /** ECI 誇張表示のデフォルト k = 10^3 */
+  DEFAULT_ECI_EXAGGERATION_LOG: 3,
+
+  /** 軸余白比率 */
   ECI_ZOOM_PADDING_RATIO: 0.2,
+
+  /** 地球赤道半径 [km]（WGS84 赤道半径） */
+  R_EARTH_KM: 6378.137,
+
+  /** 地球赤道断面円のサンプル点数 */
+  EARTH_EQUATOR_POINTS: 128,
 
   /** 地球重力定数 [km³/s²]（平均運動 n の計算用） */
   MU_EARTH_KM3_S2: 398600.4418,
@@ -31,18 +40,21 @@ const CONFIG = {
   /** chief 半長軸の初期値 [km]（GEO 想定） */
   DEFAULT_SEMI_MAJOR_AXIS_KM: 42164,
 
-  /** ROE 初期値 [無次元] */
-  ROE_DEFAULTS: {
+  /**
+   * スライダー初期値 [km]（a = DEFAULT_SEMI_MAJOR_AXIS_KM 時の従来無次元値 × a）
+   * 内部計算では δ = (km 値) / a に変換
+   */
+  ROE_DEFAULTS_KM: {
     delta_a: 0,
-    delta_lambda: 1.0e-4,
-    delta_ex: 1.0e-4,
+    delta_lambda: 4.2164,
+    delta_ex: 4.2164,
     delta_ey: 0,
-    delta_ix: 1.0e-4,
+    delta_ix: 4.2164,
     delta_iy: 0,
   },
 };
 
-/** ROE キーと DOM id の対応 */
+/** ROE スライダー（UI は km、内部は無次元 δ） */
 const ROE_FIELDS = [
   { key: "delta_a", sliderId: "roe-delta-a", outputId: "val-delta-a" },
   { key: "delta_lambda", sliderId: "roe-delta-lambda", outputId: "val-delta-lambda" },
@@ -202,32 +214,22 @@ function relativeRtnToEciKm(R_km, T_km, N_km, u_rad) {
   ];
 }
 
-/** deputy 絶対位置 [km]（ECI） */
-function deputyPositionEciKm(a_km, sample) {
-  const chief = chiefPositionEciKm(a_km, sample.u_rad);
-  const delta = relativeRtnToEciKm(
-    sample.R_km,
-    sample.T_km,
-    sample.N_km,
-    sample.u_rad
-  );
-  return [
-    chief[0] + delta[0],
-    chief[1] + delta[1],
-    chief[2] + delta[2],
-  ];
-}
-
-function samplesToEciOrbit(a_km, samples) {
+/**
+ * 地球赤道断面（ECI 赤道面 z=0 上の円, 半径 R⊕）
+ * ワイヤーフレーム球の赤道断面として表示
+ */
+function buildEarthEquatorCrossSectionEci() {
+  const r = CONFIG.R_EARTH_KM;
+  const n = CONFIG.EARTH_EQUATOR_POINTS;
   const x_km = [];
   const y_km = [];
   const z_km = [];
 
-  for (const sample of samples) {
-    const [x, y, z] = deputyPositionEciKm(a_km, sample);
-    x_km.push(x);
-    y_km.push(y);
-    z_km.push(z);
+  for (let i = 0; i <= n; i++) {
+    const theta = (TWO_PI * i) / n;
+    x_km.push(r * Math.cos(theta));
+    y_km.push(r * Math.sin(theta));
+    z_km.push(0);
   }
 
   return { x_km, y_km, z_km };
@@ -250,33 +252,47 @@ function buildChiefOrbitEci(a_km, numPoints) {
   return { x_km, y_km, z_km };
 }
 
-/** deputy サンプルと同じ u 上の chief 軌道（ズーム表示用） */
-function buildChiefOrbitEciFromSamples(a_km, samples) {
+/**
+ * ECI 誇張表示: r_display = r_chief + k · (r_deputy − r_chief)
+ * @param {number} exaggerationK - 表示専用の倍率（1 = 実スケール）
+ */
+function samplesToEciExaggeratedOrbit(a_km, samples, exaggerationK) {
   const x_km = [];
   const y_km = [];
   const z_km = [];
 
   for (const sample of samples) {
-    const [x, y, z] = chiefPositionEciKm(a_km, sample.u_rad);
-    x_km.push(x);
-    y_km.push(y);
-    z_km.push(z);
+    const chief = chiefPositionEciKm(a_km, sample.u_rad);
+    const delta = relativeRtnToEciKm(
+      sample.R_km,
+      sample.T_km,
+      sample.N_km,
+      sample.u_rad
+    );
+    x_km.push(chief[0] + exaggerationK * delta[0]);
+    y_km.push(chief[1] + exaggerationK * delta[1]);
+    z_km.push(chief[2] + exaggerationK * delta[2]);
   }
 
   return { x_km, y_km, z_km };
 }
 
-function buildEciOrbitData(a_km, primarySamples, referenceSamples) {
-  const fullScale = isEciFullScale();
-  const primaryEci = samplesToEciOrbit(a_km, primarySamples);
-  const referenceEci = referenceSamples
-    ? samplesToEciOrbit(a_km, referenceSamples)
-    : null;
-  const chiefOrbitEci = fullScale
-    ? buildChiefOrbitEci(a_km, CONFIG.ECI_CHIEF_ORBIT_POINTS)
-    : buildChiefOrbitEciFromSamples(a_km, primarySamples);
+function readEciExaggerationFactor() {
+  const el = document.getElementById("eci-exaggeration");
+  const logExp = el ? parseInt(el.value, 10) : CONFIG.DEFAULT_ECI_EXAGGERATION_LOG;
+  return Math.pow(10, Number.isFinite(logExp) ? logExp : CONFIG.DEFAULT_ECI_EXAGGERATION_LOG);
+}
 
-  return { primaryEci, referenceEci, chiefOrbitEci, fullScale };
+function buildEciExaggeratedOrbitData(a_km, primarySamples, referenceSamples) {
+  const k = readEciExaggerationFactor();
+  return {
+    exaggerationK: k,
+    primaryEci: samplesToEciExaggeratedOrbit(a_km, primarySamples, k),
+    referenceEci: referenceSamples
+      ? samplesToEciExaggeratedOrbit(a_km, referenceSamples, k)
+      : null,
+    chiefOrbitEci: buildChiefOrbitEci(a_km, CONFIG.ECI_CHIEF_ORBIT_POINTS),
+  };
 }
 
 /** 有効な Plotly 軸範囲 [min, max] */
@@ -291,25 +307,10 @@ function safeAxisRange(min, max, fallbackSpan = 10) {
   return [min, max];
 }
 
-function isEciFullScale() {
-  const el = document.getElementById("eci-full-scale");
-  return el ? el.checked : false;
-}
-
-/** ECI プロットの軸範囲 [km]（ズーム時は deputy のみ。chief 全周は範囲外になり WebGL が破綻しやすい） */
-function computeEciAxisRanges(a_km, deputyOrbits, fullScale) {
-  if (fullScale) {
-    const pad = a_km * 0.08;
-    const lim = a_km + pad;
-    return {
-      x: [-lim, lim],
-      y: [-lim, lim],
-      z: [-lim, lim],
-    };
-  }
-
+/** ECI プロットの軸範囲 [km]（chief 軌道 + 誇張 deputy を含める） */
+function computeEciAxisRanges(orbits) {
   const coords = { x: [], y: [], z: [] };
-  for (const orbit of deputyOrbits) {
+  for (const orbit of orbits) {
     if (!orbit) continue;
     coords.x.push(...orbit.x_km);
     coords.y.push(...orbit.y_km);
@@ -333,20 +334,25 @@ function computeEciAxisRanges(a_km, deputyOrbits, fullScale) {
   };
 }
 
-/** 1 軌道周期あたりの along-track ドリフト量 [km] */
-function alongTrackDriftPerOrbitKm(a_km, delta_a) {
-  return -DRIFT_LAMBDA_FACTOR * TWO_PI * a_km * delta_a;
-}
-
 // ---------------------------------------------------------------------------
 // UI ヘルパ
 // ---------------------------------------------------------------------------
 
-function formatRoeValue(value) {
+function formatKm(value) {
+  if (!Number.isFinite(value)) return "—";
+  if (Math.abs(value) < 1e-9) return "0";
   const abs = Math.abs(value);
-  if (abs === 0) return "0";
-  if (abs >= 0.01 || abs < 1e-6) return value.toExponential(2);
-  return value.toExponential(4);
+  if (abs >= 100 || abs < 0.01) return value.toExponential(2);
+  return value.toFixed(2);
+}
+
+/** スライダー [km] → 無次元 ROE（δ ≈ 線形スケール値 / a） */
+function roeDimensionlessFromKm(roeKm, a_km) {
+  const roe = {};
+  for (const { key } of ROE_FIELDS) {
+    roe[key] = roeKm[key] / a_km;
+  }
+  return roe;
 }
 
 function readSemiMajorAxisKm() {
@@ -355,18 +361,18 @@ function readSemiMajorAxisKm() {
   return Number.isFinite(v) && v > 0 ? v : CONFIG.DEFAULT_SEMI_MAJOR_AXIS_KM;
 }
 
-function readRoeFromSliders() {
-  const roe = {};
+function readRoeKmFromSliders() {
+  const roeKm = {};
   for (const { key, sliderId } of ROE_FIELDS) {
     const slider = document.getElementById(sliderId);
-    roe[key] = parseFloat(slider.value, 10);
+    roeKm[key] = parseFloat(slider.value, 10);
   }
-  return roe;
+  return roeKm;
 }
 
-function isDriftMode() {
-  const selected = document.querySelector('input[name="display-mode"]:checked');
-  return selected && selected.value === "drift";
+function readRoeFromSliders() {
+  const a_km = readSemiMajorAxisKm();
+  return roeDimensionlessFromKm(readRoeKmFromSliders(), a_km);
 }
 
 function readNumDriftOrbits() {
@@ -375,69 +381,51 @@ function readNumDriftOrbits() {
   return Number.isFinite(v) && v >= 1 ? v : CONFIG.DEFAULT_NUM_DRIFT_ORBITS;
 }
 
-function updateDriftRateDisplay(a_km, roe) {
+function updateDriftRateDisplay(a_km, roeKm) {
   const el = document.getElementById("drift-rate-display");
   if (!el) return;
 
-  if (Math.abs(roe.delta_a) < 1e-12) {
+  const deltaAKm = roeKm.delta_a;
+
+  if (Math.abs(deltaAKm) < 1e-9) {
     el.textContent =
-      "δa ≈ 0 のため along-track ドリフトはありません。\n" +
-      "δa スライダーを 0 以外に動かしてください。";
+      "Δa ≈ 0 km → along-track ドリフトなし。\n" +
+      "複数周表示は同じ閉曲線に重なります（周回数を 1 にすると見やすいです）。";
     el.classList.add("drift-rate--warn");
     return;
   }
 
   el.classList.remove("drift-rate--warn");
 
+  const roe = roeDimensionlessFromKm(roeKm, a_km);
   const n = chiefMeanMotionRadS(a_km);
   const dDeltaLambdaDt = -DRIFT_LAMBDA_FACTOR * n * roe.delta_a;
-  const driftPerOrbitKm = alongTrackDriftPerOrbitKm(a_km, roe.delta_a);
+  const driftPerOrbitKm = -DRIFT_LAMBDA_FACTOR * TWO_PI * deltaAKm;
   const periodHr = TWO_PI / n / 3600;
 
   el.textContent =
-    `δλ̇ = ${formatRoeValue(dDeltaLambdaDt)} /s\n` +
-    `1 周あたり ΔT ≈ ${driftPerOrbitKm.toFixed(3)} km\n` +
+    `δλ̇ ≈ ${formatKm(dDeltaLambdaDt * a_km)}/s（along-track スケール）\n` +
+    `1 周あたり ΔT ≈ ${formatKm(driftPerOrbitKm)} km\n` +
     `T_orbit ≈ ${periodHr.toFixed(2)} h`;
 }
 
-function updateModeUI() {
-  const driftMode = isDriftMode();
-  const driftControls = document.getElementById("drift-controls");
-  const modeHint = document.getElementById("mode-hint");
-  const caption = document.getElementById("plot-3d-caption");
-
-  driftControls.hidden = !driftMode;
-
-  if (driftMode) {
-    modeHint.textContent =
-      "δλ(t) = δλ₀ − (3/2)nδa·t を用い、複数周の開いた軌跡を表示";
-    caption.textContent =
-      "時間ドリフト: δa ≠ 0 で T 方向にセクラー変化（複数周分）";
-    updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeFromSliders());
-  } else {
-    modeHint.textContent =
-      "固定 ROE で u を 1 周 → 閉じた相対軌道";
-    caption.textContent =
-      "横軸: T、縦軸: R、奥行き: N（chief は原点）";
-  }
-}
-
 function initSliders() {
-  const { SLIDER_MIN, SLIDER_MAX, SLIDER_STEP, ROE_DEFAULTS } = CONFIG;
+  const { SLIDER_MIN_KM, SLIDER_MAX_KM, SLIDER_STEP_KM, ROE_DEFAULTS_KM } = CONFIG;
 
   for (const { key, sliderId, outputId } of ROE_FIELDS) {
     const slider = document.getElementById(sliderId);
     const output = document.getElementById(outputId);
 
-    slider.min = String(SLIDER_MIN);
-    slider.max = String(SLIDER_MAX);
-    slider.step = String(SLIDER_STEP);
-    slider.value = String(ROE_DEFAULTS[key]);
-    output.textContent = formatRoeValue(ROE_DEFAULTS[key]);
+    slider.min = String(SLIDER_MIN_KM);
+    slider.max = String(SLIDER_MAX_KM);
+    slider.step = String(SLIDER_STEP_KM);
+    slider.value = String(ROE_DEFAULTS_KM[key]);
+    output.textContent = formatKm(ROE_DEFAULTS_KM[key]);
 
     slider.addEventListener("input", () => {
-      output.textContent = formatRoeValue(parseFloat(slider.value, 10));
-      updateModeUI();
+      const km = parseFloat(slider.value, 10);
+      output.textContent = formatKm(km);
+      updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmFromSliders());
       updateAllPlots();
     });
   }
@@ -445,25 +433,13 @@ function initSliders() {
 
 /** Plotly.react はトレース数変更に弱い → 構造が変わったら newPlot */
 function getPlotStructureKey() {
-  const drift = isDriftMode();
-  const showRef =
-    drift && document.getElementById("show-single-orbit-ref").checked;
+  const showRef = document.getElementById("show-single-orbit-ref").checked;
   return (
-    `${drift ? "drift" : "single"}|ref=${showRef ? 1 : 0}|` +
-    `orb=${drift ? readNumDriftOrbits() : 0}|eci=${isEciFullScale() ? 1 : 0}`
+    `ref=${showRef ? 1 : 0}|orb=${readNumDriftOrbits()}|k=${readEciExaggerationFactor()}`
   );
 }
 
-function initModeControls() {
-  document.querySelectorAll('input[name="display-mode"]').forEach((radio) => {
-    const onModeChange = () => {
-      updateModeUI();
-      updateAllPlots(true);
-    };
-    radio.addEventListener("change", onModeChange);
-    radio.addEventListener("click", onModeChange);
-  });
-
+function initOrbitControls() {
   const orbitSlider = document.getElementById("num-drift-orbits");
   const orbitOutput = document.getElementById("val-num-drift-orbits");
   orbitSlider.value = String(CONFIG.DEFAULT_NUM_DRIFT_ORBITS);
@@ -478,12 +454,22 @@ function initModeControls() {
     .getElementById("show-single-orbit-ref")
     .addEventListener("change", () => updateAllPlots(true));
 
-  const eciScaleCheckbox = document.getElementById("eci-full-scale");
-  if (eciScaleCheckbox) {
-    eciScaleCheckbox.addEventListener("change", () => updateAllPlots(true));
-  }
+  initEciExaggerationControl();
+}
 
-  updateModeUI();
+function initEciExaggerationControl() {
+  const slider = document.getElementById("eci-exaggeration");
+  const output = document.getElementById("val-eci-exaggeration");
+  if (!slider || !output) return;
+
+  slider.value = String(CONFIG.DEFAULT_ECI_EXAGGERATION_LOG);
+  output.textContent = String(readEciExaggerationFactor());
+
+  slider.addEventListener("input", () => {
+    output.textContent = String(readEciExaggerationFactor());
+    updateEciCaption(readEciExaggerationFactor());
+    updateAllPlots();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +478,74 @@ function initModeControls() {
 
 let plotsInitialized = false;
 let lastPlotStructureKey = null;
+
+/** 軌道線の始点・終点マーカー（全プロット共通） */
+const ORBIT_ENDPOINT_MARKER = {
+  start: { color: "#58a6ff", size: 9, symbol: "circle", line: { color: "#e6edf3", width: 1 } },
+  end: { color: "#f85149", size: 9, symbol: "square", line: { color: "#e6edf3", width: 1 } },
+};
+
+function pushOrbitEndpointMarkers3D(traces, coords, labelPrefix, axisLabels) {
+  const { x, y, z } = coords;
+  if (!x || x.length < 1) return;
+
+  const axes = axisLabels || { x: "X", y: "Y", z: "Z" };
+  const last = x.length - 1;
+  const hoverStart =
+    `${labelPrefix} 始点 (u ≈ 0)<br>` +
+    `${axes.x}: %{x:.3f} ${axes.y}: %{y:.3f} ${axes.z}: %{z:.3f} km<extra></extra>`;
+  const hoverEnd =
+    `${labelPrefix} 終点<br>` +
+    `${axes.x}: %{x:.3f} ${axes.y}: %{y:.3f} ${axes.z}: %{z:.3f} km<extra></extra>`;
+
+  traces.push({
+    type: "scatter3d",
+    mode: "markers",
+    name: `${labelPrefix} 始点`,
+    x: [x[0]],
+    y: [y[0]],
+    z: [z[0]],
+    marker: { ...ORBIT_ENDPOINT_MARKER.start },
+    hovertemplate: hoverStart,
+  });
+  traces.push({
+    type: "scatter3d",
+    mode: "markers",
+    name: `${labelPrefix} 終点`,
+    x: [x[last]],
+    y: [y[last]],
+    z: [z[last]],
+    marker: { ...ORBIT_ENDPOINT_MARKER.end },
+    hovertemplate: hoverEnd,
+  });
+}
+
+const RTN_AXIS_LABELS_3D = { x: "T", y: "R", z: "N" };
+const ECI_AXIS_LABELS_3D = { x: "X", y: "Y", z: "Z" };
+
+function pushOrbitEndpointMarkers2D(traces, x, y, labelPrefix) {
+  if (!x || x.length < 1) return;
+
+  const last = x.length - 1;
+  traces.push({
+    type: "scatter",
+    mode: "markers",
+    name: `${labelPrefix} 始点`,
+    x: [x[0]],
+    y: [y[0]],
+    marker: { ...ORBIT_ENDPOINT_MARKER.start },
+    hovertemplate: `${labelPrefix} 始点: %{x:.3f}, %{y:.3f} km<extra></extra>`,
+  });
+  traces.push({
+    type: "scatter",
+    mode: "markers",
+    name: `${labelPrefix} 終点`,
+    x: [x[last]],
+    y: [y[last]],
+    marker: { ...ORBIT_ENDPOINT_MARKER.end },
+    hovertemplate: `${labelPrefix} 終点: %{x:.3f}, %{y:.3f} km<extra></extra>`,
+  });
+}
 
 function buildChiefTrace3D() {
   return {
@@ -537,12 +591,22 @@ function buildOrbitTraces3D(primaryOrbit, referenceOrbit) {
   traces.push(
     buildDeputyTrace3D(
       primaryOrbit,
-      isDriftMode() ? "Deputy（ドリフト軌跡）" : "Deputy（相対軌道）",
+      "Deputy（相対軌道）",
       "#3fb950",
       4
-    ),
-    buildChiefTrace3D()
+    )
   );
+  pushOrbitEndpointMarkers3D(
+    traces,
+    {
+      x: primaryOrbit.T_km,
+      y: primaryOrbit.R_km,
+      z: primaryOrbit.N_km,
+    },
+    "Deputy",
+    RTN_AXIS_LABELS_3D
+  );
+  traces.push(buildChiefTrace3D());
 
   return traces;
 }
@@ -613,12 +677,13 @@ function build2DTraces(orbit, plane, referenceOrbit) {
     build2DTrace(
       orbit[axisX],
       orbit[axisY],
-      isDriftMode() ? "ドリフト軌跡" : "相対軌道",
+      "相対軌道",
       color,
       2
-    ),
-    buildChief2D()
+    )
   );
+  pushOrbitEndpointMarkers2D(traces, orbit[axisX], orbit[axisY], "Deputy");
+  traces.push(buildChief2D());
 
   const planeId =
     plane === PLANE_TR ? "tr" : plane === PLANE_TN ? "tn" : "rn";
@@ -648,9 +713,8 @@ const PLANE_RN = {
 };
 
 function layout2D(xTitle, yTitle, height, planeId) {
-  const drift = isDriftMode();
-  // ドリフト時は T 範囲が大きくなりやすい → T 軸を含む面は等尺を外してドリフトを見やすく
-  const useEqualScale = !(drift && (planeId === "tr" || planeId === "tn"));
+  // T 方向ドリフトで範囲が伸びやすい → T 軸を含む面は等尺を外す
+  const useEqualScale = !(planeId === "tr" || planeId === "tn");
 
   const xaxis = {
     title: xTitle,
@@ -671,24 +735,13 @@ function layout2D(xTitle, yTitle, height, planeId) {
       gridcolor: "#30363d",
       zerolinecolor: "#484f58",
     },
-    showlegend: drift,
+    showlegend: true,
     legend: { font: { size: 10 } },
   };
 }
 
 function computeOrbitsForDisplay(a_km, roe) {
   const numPoints = CONFIG.NUM_ORBIT_POINTS;
-
-  if (!isDriftMode()) {
-    const primarySamples = buildSingleOrbitSamples(a_km, roe, numPoints);
-    return {
-      primary: samplesToRtnOrbit(primarySamples),
-      reference: null,
-      primarySamples,
-      referenceSamples: null,
-    };
-  }
-
   const numOrbits = readNumDriftOrbits();
   const { samples: primarySamples } = buildDriftOrbitSamples(
     a_km,
@@ -729,31 +782,34 @@ function buildEciLineTrace3D(orbit, name, color, width, dash) {
   };
 }
 
-function buildEciTraces3D(primaryEci, referenceEci, chiefOrbitEci, fullScale) {
-  const traces = [];
+function buildEarthEquatorTrace3D() {
+  const earth = buildEarthEquatorCrossSectionEci();
+  return buildEciLineTrace3D(
+    earth,
+    `地球（赤道断面, R⊕=${CONFIG.R_EARTH_KM.toFixed(1)} km）`,
+    "rgba(110, 159, 239, 0.9)",
+    2,
+    "dot"
+  );
+}
 
-  if (fullScale) {
-    traces.push({
-      type: "scatter3d",
-      mode: "markers",
-      name: "地球（原点）",
-      x: [0],
-      y: [0],
-      z: [0],
-      marker: { color: "#6e9fef", size: 5, symbol: "circle" },
-      hovertemplate: "地心 ECI 原点<extra></extra>",
-    });
-  }
+function buildEciTraces3D(primaryEci, referenceEci, chiefOrbitEci, exaggerationK) {
+  const deputyLabel = `Deputy（k=${exaggerationK}）`;
 
-  traces.push(
+  const earthTrace = buildEarthEquatorTrace3D();
+  earthTrace.hovertemplate =
+    `R⊕ = ${CONFIG.R_EARTH_KM.toFixed(1)} km（赤道断面）<extra></extra>`;
+
+  const traces = [
+    earthTrace,
     buildEciLineTrace3D(
       chiefOrbitEci,
-      fullScale ? "Chief 軌道" : "Chief（同位相区間）",
+      "Chief 軌道",
       "rgba(240, 193, 75, 0.85)",
       2,
       null
-    )
-  );
+    ),
+  ];
 
   if (referenceEci) {
     traces.push(
@@ -768,13 +824,17 @@ function buildEciTraces3D(primaryEci, referenceEci, chiefOrbitEci, fullScale) {
   }
 
   traces.push(
-    buildEciLineTrace3D(
-      primaryEci,
-      isDriftMode() ? "Deputy（ドリフト）" : "Deputy",
-      "#3fb950",
-      4,
-      null
-    )
+    buildEciLineTrace3D(primaryEci, deputyLabel, "#3fb950", 4, null)
+  );
+  pushOrbitEndpointMarkers3D(
+    traces,
+    {
+      x: primaryEci.x_km,
+      y: primaryEci.y_km,
+      z: primaryEci.z_km,
+    },
+    "Deputy",
+    ECI_AXIS_LABELS_3D
   );
 
   return traces;
@@ -838,17 +898,33 @@ function layoutEci2D(xTitle, yTitle, height, axisRanges) {
   };
 }
 
-function buildEci2DTraces(primaryEci, referenceEci, chiefOrbitEci, plane, fullScale) {
+function buildEci2DTraces(
+  primaryEci,
+  referenceEci,
+  chiefOrbitEci,
+  plane,
+  exaggerationK
+) {
   const { axisX, axisY, xTitle, yTitle } = plane;
+  const earthEquator = buildEarthEquatorCrossSectionEci();
   const traces = [
+    buildEci2DTrace(
+      earthEquator,
+      axisX,
+      axisY,
+      `地球（R⊕ 断面）`,
+      "rgba(110, 159, 239, 0.9)",
+      1.5,
+      "dot"
+    ),
     buildEci2DTrace(
       chiefOrbitEci,
       axisX,
       axisY,
-      fullScale ? "Chief 軌道" : "Chief（同位相区間）",
+      "Chief 軌道",
       "rgba(240, 193, 75, 0.85)",
       1.5,
-      fullScale ? "dot" : "solid"
+      "dot"
     ),
   ];
 
@@ -866,34 +942,33 @@ function buildEci2DTraces(primaryEci, referenceEci, chiefOrbitEci, plane, fullSc
     );
   }
 
+  const deputyLabel = `Deputy（k=${exaggerationK}）`;
+
   traces.push(
-    buildEci2DTrace(
-      primaryEci,
-      axisX,
-      axisY,
-      isDriftMode() ? "Deputy（ドリフト）" : "Deputy",
-      plane.color,
-      2,
-      null
-    )
+    buildEci2DTrace(primaryEci, axisX, axisY, deputyLabel, plane.color, 2, null)
+  );
+  pushOrbitEndpointMarkers2D(
+    traces,
+    primaryEci[axisX],
+    primaryEci[axisY],
+    "Deputy"
   );
 
-  const deputyOnly = [primaryEci, referenceEci];
+  const allOrbits = [
+    buildEarthEquatorCrossSectionEci(),
+    chiefOrbitEci,
+    primaryEci,
+    referenceEci,
+  ];
   const axisRanges = {
-    x: computeEciAxisRangesForPlane(deputyOnly, axisX, fullScale),
-    y: computeEciAxisRangesForPlane(deputyOnly, axisY, fullScale),
+    x: computeEciAxisRangesForPlane(allOrbits, axisX),
+    y: computeEciAxisRangesForPlane(allOrbits, axisY),
   };
 
   return { traces, layout: layoutEci2D(xTitle, yTitle, 260, axisRanges) };
 }
 
-function computeEciAxisRangesForPlane(orbits, axisKey, fullScale) {
-  const a_km = readSemiMajorAxisKm();
-  if (fullScale) {
-    const lim = a_km * 1.08;
-    return [-lim, lim];
-  }
-
+function computeEciAxisRangesForPlane(orbits, axisKey) {
   const values = [];
   for (const orbit of orbits) {
     if (!orbit) continue;
@@ -931,13 +1006,19 @@ const PLANE_ECI_YZ = {
   color: "#a371f7",
 };
 
-function updateEciCaption(fullScale) {
+function updateEciCaption(exaggerationK) {
   const el = document.getElementById("plot-eci-caption");
   if (!el) return;
 
-  el.textContent = fullScale
-    ? "chief 全軌道スケール。deputy の相対運動は円に対して非常に小さく見えます。"
-    : "deputy 軌跡付近に自動ズーム。δi 成分は Z 方向の振動として現れます。";
+  if (exaggerationK <= 1) {
+    el.textContent =
+      "実スケール（k=1）。deputy は chief 軌道にほぼ重なって見えます。";
+    return;
+  }
+
+  el.textContent =
+    `表示専用: r = r_chief + k·(r_deputy−r_chief)、k=${exaggerationK}。` +
+    "実際の相対距離は km オーダ（RTN プロット参照）。";
 }
 
 function plotDivExists(id) {
@@ -1025,9 +1106,7 @@ function updateAllPlots(forceNewPlot = false) {
   const { primary, reference, primarySamples, referenceSamples } =
     computeOrbitsForDisplay(a_km, roe);
 
-  if (isDriftMode()) {
-    updateDriftRateDisplay(a_km, roe);
-  }
+  updateDriftRateDisplay(a_km, readRoeKmFromSliders());
 
   const traces3d = buildOrbitTraces3D(primary, reference);
   const layout3d = layout3D();
@@ -1035,15 +1114,21 @@ function updateAllPlots(forceNewPlot = false) {
   const tn = build2DTraces(primary, PLANE_TN, reference);
   const rn = build2DTraces(primary, PLANE_RN, reference);
 
-  const { primaryEci, referenceEci, chiefOrbitEci, fullScale: eciFullScale } =
-    buildEciOrbitData(a_km, primarySamples, referenceSamples);
-  updateEciCaption(eciFullScale);
+  const {
+    primaryEci,
+    referenceEci,
+    chiefOrbitEci,
+    exaggerationK,
+  } = buildEciExaggeratedOrbitData(a_km, primarySamples, referenceSamples);
+  updateEciCaption(exaggerationK);
 
-  const axisRanges3d = computeEciAxisRanges(
-    a_km,
-    [primaryEci, referenceEci],
-    eciFullScale
-  );
+  const earthEquator = buildEarthEquatorCrossSectionEci();
+  const axisRanges3d = computeEciAxisRanges([
+    earthEquator,
+    chiefOrbitEci,
+    primaryEci,
+    referenceEci,
+  ]);
 
   const plotBundle = {
     traces3d,
@@ -1055,7 +1140,7 @@ function updateAllPlots(forceNewPlot = false) {
       primaryEci,
       referenceEci,
       chiefOrbitEci,
-      eciFullScale
+      exaggerationK
     ),
     layoutEci3d: layoutEci3D(axisRanges3d),
     eciXy: buildEci2DTraces(
@@ -1063,21 +1148,21 @@ function updateAllPlots(forceNewPlot = false) {
       referenceEci,
       chiefOrbitEci,
       PLANE_ECI_XY,
-      eciFullScale
+      exaggerationK
     ),
     eciXz: buildEci2DTraces(
       primaryEci,
       referenceEci,
       chiefOrbitEci,
       PLANE_ECI_XZ,
-      eciFullScale
+      exaggerationK
     ),
     eciYz: buildEci2DTraces(
       primaryEci,
       referenceEci,
       chiefOrbitEci,
       PLANE_ECI_YZ,
-      eciFullScale
+      exaggerationK
     ),
   };
 
@@ -1090,15 +1175,15 @@ function updateAllPlots(forceNewPlot = false) {
 
 function init() {
   initSliders();
-  initModeControls();
+  initOrbitControls();
 
   const semiMajorInput = document.getElementById("semi-major-axis");
   semiMajorInput.addEventListener("input", () => {
-    updateModeUI();
+    updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmFromSliders());
     updateAllPlots();
   });
   semiMajorInput.addEventListener("change", () => {
-    updateModeUI();
+    updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmFromSliders());
     updateAllPlots();
   });
 
@@ -1110,6 +1195,11 @@ function init() {
     }
   });
 
+  updateDriftRateDisplay(
+    readSemiMajorAxisKm(),
+    readRoeKmFromSliders()
+  );
+  updateEciCaption(readEciExaggerationFactor());
   updateAllPlots();
 }
 

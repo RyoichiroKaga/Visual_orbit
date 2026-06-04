@@ -6,7 +6,7 @@
   <title>ROE → RTN 相対軌道可視化</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
-  <script src="main.js?v=3" defer></script>
+  <script src="main.js?v=9" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -33,12 +33,14 @@
       </section>
 
       <section class="panel-section">
-        <h2>ROE パラメータ（無次元）</h2>
-        <p class="section-hint">スライダーで各成分を調整すると相対軌道がリアルタイムに更新されます。</p>
+        <h2>相対軌道パラメータ [km]</h2>
+        <p class="section-hint">
+          線形近似で <var>a</var>·δ に対応するスケール。スライダーは km、内部で δ = 値/<var>a</var> に変換します。
+        </p>
 
         <div class="roe-control" data-roe="delta_a">
           <div class="roe-header">
-            <label for="roe-delta-a"><var>δa</var></label>
+            <label for="roe-delta-a"><var>a</var>·δ<var>a</var> [km]</label>
             <output id="val-delta-a" for="roe-delta-a">0</output>
           </div>
           <input type="range" id="roe-delta-a" class="roe-slider">
@@ -46,23 +48,23 @@
 
         <div class="roe-control" data-roe="delta_lambda">
           <div class="roe-header">
-            <label for="roe-delta-lambda"><var>δλ</var></label>
-            <output id="val-delta-lambda" for="roe-delta-lambda">1.0e-4</output>
+            <label for="roe-delta-lambda"><var>a</var>·δλ [km]</label>
+            <output id="val-delta-lambda" for="roe-delta-lambda">4.22</output>
           </div>
           <input type="range" id="roe-delta-lambda" class="roe-slider">
         </div>
 
         <div class="roe-control" data-roe="delta_ex">
           <div class="roe-header">
-            <label for="roe-delta-ex"><var>δe</var><sub>x</sub></label>
-            <output id="val-delta-ex" for="roe-delta-ex">1.0e-4</output>
+            <label for="roe-delta-ex"><var>a</var>·δ<var>e</var><sub>x</sub> [km]</label>
+            <output id="val-delta-ex" for="roe-delta-ex">4.22</output>
           </div>
           <input type="range" id="roe-delta-ex" class="roe-slider">
         </div>
 
         <div class="roe-control" data-roe="delta_ey">
           <div class="roe-header">
-            <label for="roe-delta-ey"><var>δe</var><sub>y</sub></label>
+            <label for="roe-delta-ey"><var>a</var>·δ<var>e</var><sub>y</sub> [km]</label>
             <output id="val-delta-ey" for="roe-delta-ey">0</output>
           </div>
           <input type="range" id="roe-delta-ey" class="roe-slider">
@@ -70,15 +72,15 @@
 
         <div class="roe-control" data-roe="delta_ix">
           <div class="roe-header">
-            <label for="roe-delta-ix"><var>δi</var><sub>x</sub></label>
-            <output id="val-delta-ix" for="roe-delta-ix">1.0e-4</output>
+            <label for="roe-delta-ix"><var>a</var>·δ<var>i</var><sub>x</sub> [km]</label>
+            <output id="val-delta-ix" for="roe-delta-ix">4.22</output>
           </div>
           <input type="range" id="roe-delta-ix" class="roe-slider">
         </div>
 
         <div class="roe-control" data-roe="delta_iy">
           <div class="roe-header">
-            <label for="roe-delta-iy"><var>δi</var><sub>y</sub></label>
+            <label for="roe-delta-iy"><var>a</var>·δ<var>i</var><sub>y</sub> [km]</label>
             <output id="val-delta-iy" for="roe-delta-iy">0</output>
           </div>
           <input type="range" id="roe-delta-iy" class="roe-slider">
@@ -86,43 +88,28 @@
       </section>
 
       <section class="panel-section">
-        <h2>表示モード</h2>
-        <div class="mode-options">
-          <label class="mode-option">
-            <input type="radio" name="display-mode" value="single" checked>
-            <span>1 周（<var>u</var> のみ）</span>
-          </label>
-          <label class="mode-option">
-            <input type="radio" name="display-mode" value="drift">
-            <span>時間ドリフト（δ<var>a</var>）</span>
-          </label>
-        </div>
-        <p class="section-hint mode-hint" id="mode-hint">
-          固定 ROE で <var>u</var> を 1 周 → 閉じた相対軌道
+        <h2>軌道表示</h2>
+        <p class="section-hint">
+          δλ(<var>t</var>) = δλ<sub>0</sub> − (3/2)<var>n</var>·δ<var>a</var>·<var>t</var> を常に適用（Δa = 0 のときは各周が閉曲線に重なります）。
         </p>
-
-        <div id="drift-controls" class="drift-controls" hidden>
-          <label class="field-label" for="num-drift-orbits">
-            表示軌道周回数
-          </label>
-          <div class="roe-header">
-            <input
-              type="range"
-              id="num-drift-orbits"
-              class="roe-slider"
-              min="1"
-              max="20"
-              step="1"
-              value="5"
-            >
-            <output id="val-num-drift-orbits" for="num-drift-orbits">5</output>
-          </div>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show-single-orbit-ref" checked>
-            参考: 1 周の閉曲線を重ね表示
-          </label>
-          <p class="drift-rate" id="drift-rate-display"></p>
+        <label class="field-label" for="num-drift-orbits">表示軌道周回数</label>
+        <div class="roe-header">
+          <input
+            type="range"
+            id="num-drift-orbits"
+            class="roe-slider"
+            min="1"
+            max="20"
+            step="1"
+            value="5"
+          >
+          <output id="val-num-drift-orbits" for="num-drift-orbits">5</output>
         </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="show-single-orbit-ref" checked>
+          参考: δλ 固定の 1 周（閉曲線）を重ね表示
+        </label>
+        <p class="drift-rate" id="drift-rate-display"></p>
       </section>
 
       <section class="panel-section theory">
@@ -142,10 +129,12 @@
           <li><strong>N</strong> — Cross-track [km]</li>
         </ul>
         <p class="theory-intro eci-note">
-          <strong>ECI</strong> 表示: 赤道面内の近円 chief 軌道を仮定し、
-          <var>r</var><sub>deputy</sub> =
-          <var>r</var><sub>chief</sub> + <var>R</var><var>R̂</var> + <var>T</var><var>T̂</var> + <var>N</var><var>N̂</var>
-          で慣性系に変換します。
+          <strong>ECI 誇張</strong>:
+          <var>r</var><sub>表示</sub> =
+          <var>r</var><sub>chief</sub> +
+          <var>k</var>(<var>r</var><sub>deputy</sub> − <var>r</var><sub>chief</sub>)
+          （<var>k</var> は表示専用）。地球は赤道面内に
+          <var>R</var><sub>⊕</sub> ≈ 6378 km の円（実スケール）を表示。
         </p>
       </section>
     </aside>
@@ -153,7 +142,9 @@
     <div class="plot-area">
       <section class="plot-block plot-block--main">
         <h2 class="plot-title">3D — RTN 相対軌道</h2>
-        <p class="plot-caption" id="plot-3d-caption">横軸: T、縦軸: R、奥行き: N（chief は原点）</p>
+        <p class="plot-caption" id="plot-3d-caption">
+          横軸: T、縦軸: R、奥行き: N [km]（chief は原点）。● 始点（u≈0）、■ 終点。
+        </p>
         <div id="plot-3d" class="plot-container"></div>
       </section>
 
@@ -176,19 +167,29 @@
       </section>
 
       <section class="plot-block plot-block--eci">
-        <h2 class="plot-title">3D — ECI（慣性系）</h2>
-        <label class="checkbox-label eci-scale-toggle">
-          <input type="checkbox" id="eci-full-scale">
-          chief 全軌道スケールで表示（オフ時は deputy 付近にズーム）
+        <h2 class="plot-title">3D — ECI（慣性系・誇張表示）</h2>
+        <label class="field-label" for="eci-exaggeration">
+          表示用誇張倍率 <var>k</var> = 10<sup>n</sup>
         </label>
-        <p class="plot-caption" id="plot-eci-caption">
-          軸: X, Y, Z [km]（地心 ECI）。赤道面内の chief 近円軌道を仮定。
-        </p>
+        <div class="roe-header">
+          <input
+            type="range"
+            id="eci-exaggeration"
+            class="roe-slider"
+            min="0"
+            max="4"
+            step="1"
+            value="3"
+          >
+          <output id="val-eci-exaggeration" for="eci-exaggeration">1000</output>
+        </div>
+        <p class="section-hint">n=0 → k=1（実スケール）、n=4 → k=10000。初期値 k=1000。</p>
+        <p class="plot-caption" id="plot-eci-caption"></p>
         <div id="plot-eci-3d" class="plot-container"></div>
       </section>
 
       <section class="plot-block plot-block--projections">
-        <h2 class="plot-title">ECI — 2D 投影</h2>
+        <h2 class="plot-title">ECI — 2D 投影（誇張表示）</h2>
         <div class="projection-grid">
           <div class="projection-cell">
             <h3>X–Y 平面</h3>
