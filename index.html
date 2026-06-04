@@ -6,7 +6,7 @@
   <title>ROE → RTN 相対軌道可視化</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
-  <script src="main.js?v=9" defer></script>
+  <script src="main.js?v=10" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -140,71 +140,112 @@
     </aside>
 
     <div class="plot-area">
-      <section class="plot-block plot-block--main">
-        <h2 class="plot-title">3D — RTN 相対軌道</h2>
-        <p class="plot-caption" id="plot-3d-caption">
-          横軸: T、縦軸: R、奥行き: N [km]（chief は原点）。● 始点（u≈0）、■ 終点。
-        </p>
-        <div id="plot-3d" class="plot-container"></div>
-      </section>
+      <nav class="view-tabs" role="tablist" aria-label="表示座標系">
+        <button
+          type="button"
+          class="view-tab is-active"
+          role="tab"
+          id="view-tab-rtn"
+          aria-selected="true"
+          aria-controls="view-panel-rtn"
+          data-view="rtn"
+        >
+          RTN 相対軌道
+        </button>
+        <button
+          type="button"
+          class="view-tab"
+          role="tab"
+          id="view-tab-eci"
+          aria-selected="false"
+          aria-controls="view-panel-eci"
+          data-view="eci"
+          tabindex="-1"
+        >
+          ECI 絶対軌道
+        </button>
+      </nav>
 
-      <section class="plot-block plot-block--projections">
-        <h2 class="plot-title">RTN — 2D 投影</h2>
-        <div class="projection-grid">
-          <div class="projection-cell">
-            <h3>T–R 平面</h3>
-            <div id="plot-tr" class="plot-container plot-container--small"></div>
-          </div>
-          <div class="projection-cell">
-            <h3>T–N 平面</h3>
-            <div id="plot-tn" class="plot-container plot-container--small"></div>
-          </div>
-          <div class="projection-cell">
-            <h3>R–N 平面</h3>
-            <div id="plot-rn" class="plot-container plot-container--small"></div>
-          </div>
-        </div>
-      </section>
+      <div
+        class="view-panel is-active"
+        id="view-panel-rtn"
+        role="tabpanel"
+        aria-labelledby="view-tab-rtn"
+      >
+        <section class="plot-block plot-block--main">
+          <h2 class="plot-title">3D — RTN 相対軌道</h2>
+          <p class="plot-caption" id="plot-3d-caption">
+            横軸: T、縦軸: R、奥行き: N [km]（chief は原点）。● 始点（u≈0）、■ 終点。
+          </p>
+          <div id="plot-3d" class="plot-container"></div>
+        </section>
 
-      <section class="plot-block plot-block--eci">
-        <h2 class="plot-title">3D — ECI（慣性系・誇張表示）</h2>
-        <label class="field-label" for="eci-exaggeration">
-          表示用誇張倍率 <var>k</var> = 10<sup>n</sup>
-        </label>
-        <div class="roe-header">
-          <input
-            type="range"
-            id="eci-exaggeration"
-            class="roe-slider"
-            min="0"
-            max="4"
-            step="1"
-            value="3"
-          >
-          <output id="val-eci-exaggeration" for="eci-exaggeration">1000</output>
-        </div>
-        <p class="section-hint">n=0 → k=1（実スケール）、n=4 → k=10000。初期値 k=1000。</p>
-        <p class="plot-caption" id="plot-eci-caption"></p>
-        <div id="plot-eci-3d" class="plot-container"></div>
-      </section>
+        <section class="plot-block plot-block--projections">
+          <h2 class="plot-title">RTN — 2D 投影</h2>
+          <div class="projection-grid">
+            <div class="projection-cell">
+              <h3>T–R 平面</h3>
+              <div id="plot-tr" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>T–N 平面</h3>
+              <div id="plot-tn" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>R–N 平面</h3>
+              <div id="plot-rn" class="plot-container plot-container--small"></div>
+            </div>
+          </div>
+        </section>
+      </div>
 
-      <section class="plot-block plot-block--projections">
-        <h2 class="plot-title">ECI — 2D 投影（誇張表示）</h2>
-        <div class="projection-grid">
-          <div class="projection-cell">
-            <h3>X–Y 平面</h3>
-            <div id="plot-eci-xy" class="plot-container plot-container--small"></div>
+      <div
+        class="view-panel"
+        id="view-panel-eci"
+        role="tabpanel"
+        aria-labelledby="view-tab-eci"
+        hidden
+      >
+        <section class="plot-block plot-block--eci">
+          <h2 class="plot-title">3D — ECI（慣性系・誇張表示）</h2>
+          <label class="field-label" for="eci-exaggeration">
+            表示用誇張倍率 <var>k</var> = 10<sup>n</sup>
+          </label>
+          <div class="roe-header">
+            <input
+              type="range"
+              id="eci-exaggeration"
+              class="roe-slider"
+              min="0"
+              max="4"
+              step="1"
+              value="3"
+            >
+            <output id="val-eci-exaggeration" for="eci-exaggeration">1000</output>
           </div>
-          <div class="projection-cell">
-            <h3>X–Z 平面</h3>
-            <div id="plot-eci-xz" class="plot-container plot-container--small"></div>
+          <p class="section-hint">n=0 → k=1（実スケール）、n=4 → k=10000。初期値 k=1000。</p>
+          <p class="plot-caption" id="plot-eci-caption"></p>
+          <div id="plot-eci-3d" class="plot-container"></div>
+        </section>
+
+        <section class="plot-block plot-block--projections">
+          <h2 class="plot-title">ECI — 2D 投影（誇張表示）</h2>
+          <div class="projection-grid">
+            <div class="projection-cell">
+              <h3>X–Y 平面</h3>
+              <div id="plot-eci-xy" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>X–Z 平面</h3>
+              <div id="plot-eci-xz" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>Y–Z 平面</h3>
+              <div id="plot-eci-yz" class="plot-container plot-container--small"></div>
+            </div>
           </div>
-          <div class="projection-cell">
-            <h3>Y–Z 平面</h3>
-            <div id="plot-eci-yz" class="plot-container plot-container--small"></div>
-          </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   </main>
 

@@ -68,16 +68,22 @@ const TWO_PI = 2 * Math.PI;
 const DRIFT_LAMBDA_FACTOR = 1.5; // δλ̇ = -(3/2) n δa
 
 /** Plotly が描画する div id 一覧 */
-const PLOT_DIV_IDS = [
-  "plot-3d",
-  "plot-tr",
-  "plot-tn",
-  "plot-rn",
+const RTN_PLOT_IDS = ["plot-3d", "plot-tr", "plot-tn", "plot-rn"];
+const ECI_PLOT_IDS = [
   "plot-eci-3d",
   "plot-eci-xy",
   "plot-eci-xz",
   "plot-eci-yz",
 ];
+const PLOT_DIV_IDS = [...RTN_PLOT_IDS, ...ECI_PLOT_IDS];
+
+const VIEW_PLOT_IDS = {
+  rtn: RTN_PLOT_IDS,
+  eci: ECI_PLOT_IDS,
+};
+
+/** @type {"rtn" | "eci"} */
+let activeView = "rtn";
 
 // Plotly 用の共通スタイル（ダークテーマに合わせる）
 const PLOT_LAYOUT_BASE = {
@@ -1037,14 +1043,65 @@ function drawPlot(divId, traces, layout, useNewPlot, plotOpts) {
   return Plotly.react(divId, traces, layout);
 }
 
-function schedulePlotResize() {
-  requestAnimationFrame(() => {
-    for (const id of PLOT_DIV_IDS) {
-      if (plotDivExists(id)) {
-        Plotly.Plots.resize(id);
-      }
+function getPlotIdsForView(view = activeView) {
+  return VIEW_PLOT_IDS[view] ?? RTN_PLOT_IDS;
+}
+
+function resizePlots(plotIds) {
+  for (const id of plotIds) {
+    if (plotDivExists(id)) {
+      Plotly.Plots.resize(id);
     }
+  }
+}
+
+function schedulePlotResize(view = activeView) {
+  requestAnimationFrame(() => {
+    resizePlots(getPlotIdsForView(view));
   });
+}
+
+function setActiveView(view) {
+  if (view !== "rtn" && view !== "eci") return;
+
+  activeView = view;
+
+  const tabRtn = document.getElementById("view-tab-rtn");
+  const tabEci = document.getElementById("view-tab-eci");
+  const panelRtn = document.getElementById("view-panel-rtn");
+  const panelEci = document.getElementById("view-panel-eci");
+  if (!tabRtn || !tabEci || !panelRtn || !panelEci) return;
+
+  const isRtn = view === "rtn";
+
+  tabRtn.classList.toggle("is-active", isRtn);
+  tabEci.classList.toggle("is-active", !isRtn);
+  tabRtn.setAttribute("aria-selected", String(isRtn));
+  tabEci.setAttribute("aria-selected", String(!isRtn));
+  tabRtn.tabIndex = isRtn ? 0 : -1;
+  tabEci.tabIndex = isRtn ? -1 : 0;
+
+  panelRtn.classList.toggle("is-active", isRtn);
+  panelEci.classList.toggle("is-active", !isRtn);
+  panelRtn.hidden = !isRtn;
+  panelEci.hidden = isRtn;
+
+  schedulePlotResize(view);
+}
+
+function initViewTabs() {
+  const tabs = document.querySelectorAll(".view-tab[data-view]");
+  if (tabs.length === 0) return;
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const view = tab.getAttribute("data-view");
+      if (view === activeView) return;
+      setActiveView(view);
+    });
+  });
+
+  setActiveView(activeView);
 }
 
 function drawAllPlots(plotBundle, forceNewPlot) {
@@ -1187,11 +1244,11 @@ function init() {
     updateAllPlots();
   });
 
+  initViewTabs();
+
   window.addEventListener("resize", () => {
     if (plotsInitialized) {
-      for (const id of PLOT_DIV_IDS) {
-        Plotly.Plots.resize(id);
-      }
+      resizePlots(getPlotIdsForView());
     }
   });
 
