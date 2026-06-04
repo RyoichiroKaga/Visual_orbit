@@ -1,0 +1,273 @@
+/* ROE → RTN 相対軌道可視化 — 研究デモ向けダークテーマ */
+
+:root {
+  --bg-deep: #0d1117;
+  --bg-panel: #161b22;
+  --bg-elevated: #1c2333;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-dim: #388bfd66;
+  --chief-color: #f0c14b;
+  --deputy-color: #3fb950;
+  --grid-gap: 1.25rem;
+  --font-sans: "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Yu Gothic UI", Meiryo, system-ui, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 15px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background: var(--bg-deep);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* Header */
+
+.app-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* Main layout: controls left, plots right */
+
+.app-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) 1fr;
+  gap: 0;
+  min-height: calc(100vh - 7rem);
+}
+
+@media (max-width: 960px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Control panel */
+
+.control-panel {
+  padding: 1.25rem 1.25rem 2rem;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: calc(100vh - 7rem);
+}
+
+.panel-section {
+  margin-bottom: 1.5rem;
+}
+
+.panel-section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.section-hint {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.number-input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.number-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+/* ROE sliders */
+
+.roe-control {
+  margin-bottom: 1rem;
+}
+
+.roe-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+
+.roe-header label {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.roe-header output {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--deputy-color);
+  min-width: 6.5em;
+  text-align: right;
+}
+
+.roe-slider {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Theory / equations */
+
+.theory .theory-intro {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.equations {
+  padding: 0.75rem 0.85rem;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.7;
+}
+
+.equations p {
+  margin: 0.2rem 0;
+}
+
+.axis-legend {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.axis-legend li {
+  margin-bottom: 0.2rem;
+}
+
+/* Plot area */
+
+.plot-area {
+  padding: 1rem 1.25rem 1.5rem;
+  overflow-y: auto;
+  background: var(--bg-deep);
+}
+
+.plot-block {
+  margin-bottom: 1.25rem;
+}
+
+.plot-title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.plot-caption {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.plot-container {
+  width: 100%;
+  min-height: 420px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.plot-container--small {
+  min-height: 260px;
+}
+
+/* 2D projection grid */
+
+.projection-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--grid-gap);
+}
+
+@media (max-width: 1200px) {
+  .projection-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.projection-cell h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Footer */
+
+.app-footer {
+  padding: 0.65rem 1.5rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.app-footer p {
+  margin: 0;
+}
+
+/* Math variables in labels */
+
+var {
+  font-style: italic;
+}
+
+sub {
+  font-size: 0.75em;
+}

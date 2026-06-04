@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROE → RTN 相対軌道可視化</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1>ROE → RTN 相対軌道可視化</h1>
+    <p class="subtitle">Relative Orbital Elements から RTN 座標系での相対軌道（線形近似）</p>
+  </header>
+
+  <main class="app-layout">
+    <aside class="control-panel">
+      <section class="panel-section">
+        <h2>Chief 軌道</h2>
+        <label class="field-label" for="semi-major-axis">
+          半長軸 <var>a</var> [km]
+        </label>
+        <input
+          type="number"
+          id="semi-major-axis"
+          class="number-input"
+          value="42164"
+          min="1000"
+          max="1000000"
+          step="1"
+        >
+      </section>
+
+      <section class="panel-section">
+        <h2>ROE パラメータ（無次元）</h2>
+        <p class="section-hint">スライダーで各成分を調整すると相対軌道がリアルタイムに更新されます。</p>
+
+        <div class="roe-control" data-roe="delta_a">
+          <div class="roe-header">
+            <label for="roe-delta-a"><var>δa</var></label>
+            <output id="val-delta-a" for="roe-delta-a">0</output>
+          </div>
+          <input type="range" id="roe-delta-a" class="roe-slider">
+        </div>
+
+        <div class="roe-control" data-roe="delta_lambda">
+          <div class="roe-header">
+            <label for="roe-delta-lambda"><var>δλ</var></label>
+            <output id="val-delta-lambda" for="roe-delta-lambda">1.0e-4</output>
+          </div>
+          <input type="range" id="roe-delta-lambda" class="roe-slider">
+        </div>
+
+        <div class="roe-control" data-roe="delta_ex">
+          <div class="roe-header">
+            <label for="roe-delta-ex"><var>δe</var><sub>x</sub></label>
+            <output id="val-delta-ex" for="roe-delta-ex">1.0e-4</output>
+          </div>
+          <input type="range" id="roe-delta-ex" class="roe-slider">
+        </div>
+
+        <div class="roe-control" data-roe="delta_ey">
+          <div class="roe-header">
+            <label for="roe-delta-ey"><var>δe</var><sub>y</sub></label>
+            <output id="val-delta-ey" for="roe-delta-ey">0</output>
+          </div>
+          <input type="range" id="roe-delta-ey" class="roe-slider">
+        </div>
+
+        <div class="roe-control" data-roe="delta_ix">
+          <div class="roe-header">
+            <label for="roe-delta-ix"><var>δi</var><sub>x</sub></label>
+            <output id="val-delta-ix" for="roe-delta-ix">1.0e-4</output>
+          </div>
+          <input type="range" id="roe-delta-ix" class="roe-slider">
+        </div>
+
+        <div class="roe-control" data-roe="delta_iy">
+          <div class="roe-header">
+            <label for="roe-delta-iy"><var>δi</var><sub>y</sub></label>
+            <output id="val-delta-iy" for="roe-delta-iy">0</output>
+          </div>
+          <input type="range" id="roe-delta-iy" class="roe-slider">
+        </div>
+      </section>
+
+      <section class="panel-section theory">
+        <h2>使用する近似式</h2>
+        <p class="theory-intro">
+          近円軌道・小さい相対運動を仮定した線形近似。引数緯度 <var>u</var> [rad] を 0 から 2π まで変化させて 1 周分を描画します。
+        </p>
+        <div class="equations">
+          <p><var>R</var> = <var>a</var> (δ<var>a</var> − δ<var>e</var><sub>x</sub> cos <var>u</var> − δ<var>e</var><sub>y</sub> sin <var>u</var>)</p>
+          <p><var>T</var> = <var>a</var> (δλ + 2 δ<var>e</var><sub>x</sub> sin <var>u</var> − 2 δ<var>e</var><sub>y</sub> cos <var>u</var>)</p>
+          <p><var>N</var> = <var>a</var> (δ<var>i</var><sub>x</sub> sin <var>u</var> − δ<var>i</var><sub>y</sub> cos <var>u</var>)</p>
+        </div>
+        <ul class="axis-legend">
+          <li><strong>R</strong> — Radial [km]</li>
+          <li><strong>T</strong> — Along-track [km]</li>
+          <li><strong>N</strong> — Cross-track [km]</li>
+        </ul>
+      </section>
+    </aside>
+
+    <div class="plot-area">
+      <section class="plot-block plot-block--main">
+        <h2 class="plot-title">3D — RTN 相対軌道</h2>
+        <p class="plot-caption">横軸: T、縦軸: R、奥行き: N（chief は原点）</p>
+        <div id="plot-3d" class="plot-container"></div>
+      </section>
+
+      <section class="plot-block plot-block--projections">
+        <h2 class="plot-title">2D 投影</h2>
+        <div class="projection-grid">
+          <div class="projection-cell">
+            <h3>T–R 平面</h3>
+            <div id="plot-tr" class="plot-container plot-container--small"></div>
+          </div>
+          <div class="projection-cell">
+            <h3>T–N 平面</h3>
+            <div id="plot-tn" class="plot-container plot-container--small"></div>
+          </div>
+          <div class="projection-cell">
+            <h3>R–N 平面</h3>
+            <div id="plot-rn" class="plot-container plot-container--small"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <p>教育・研究補助用デモ — 近円軌道・線形化・摂動なしの簡易モデル（厳密伝播ではありません）</p>
+  </footer>
+</body>
+</html>
