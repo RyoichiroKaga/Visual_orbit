@@ -1,5 +1,5 @@
 /**
- * ROE → RTN 相対軌道可視化
+ * ROE 相対軌道可視化
  * 近円軌道・小さい相対運動の線形近似（ブラウザ内計算のみ）
  */
 
@@ -8,10 +8,8 @@
 // ---------------------------------------------------------------------------
 
 const CONFIG = {
-  /** スライダー範囲 [km]（線形近似: 無次元 ROE ≈ 値/a） */
-  SLIDER_MIN_KM: -150,
-  SLIDER_MAX_KM: 150,
-  SLIDER_STEP_KM: 0.5,
+  /** ROE 数値入力の推奨 step [km] */
+  ROE_INPUT_STEP_KM: 0.5,
 
   /** 1 周あたりのサンプル点数 */
   NUM_ORBIT_POINTS: 400,
@@ -48,7 +46,7 @@ const CONFIG = {
   },
 
   /**
-   * スライダー初期値 [km]（a = DEFAULT_CHIEF_COE.a_km 時の従来無次元値 × a）
+   * ROE 初期値 [km]（a = DEFAULT_CHIEF_COE.a_km 時の従来無次元値 × a）
    * 内部計算では δ = (km 値) / a に変換
    */
   ROE_DEFAULTS_KM: {
@@ -61,14 +59,14 @@ const CONFIG = {
   },
 };
 
-/** ROE スライダー（UI は km、内部は無次元 δ） */
+/** ROE 数値入力（UI は km、内部は無次元 δ） */
 const ROE_FIELDS = [
-  { key: "delta_a", sliderId: "roe-delta-a", outputId: "val-delta-a" },
-  { key: "delta_lambda", sliderId: "roe-delta-lambda", outputId: "val-delta-lambda" },
-  { key: "delta_ex", sliderId: "roe-delta-ex", outputId: "val-delta-ex" },
-  { key: "delta_ey", sliderId: "roe-delta-ey", outputId: "val-delta-ey" },
-  { key: "delta_ix", sliderId: "roe-delta-ix", outputId: "val-delta-ix" },
-  { key: "delta_iy", sliderId: "roe-delta-iy", outputId: "val-delta-iy" },
+  { key: "delta_a", inputId: "roe-delta-a" },
+  { key: "delta_lambda", inputId: "roe-delta-lambda" },
+  { key: "delta_ex", inputId: "roe-delta-ex" },
+  { key: "delta_ey", inputId: "roe-delta-ey" },
+  { key: "delta_ix", inputId: "roe-delta-ix" },
+  { key: "delta_iy", inputId: "roe-delta-iy" },
 ];
 
 /** COE → ROE 変換後の読み取り専用表示（Deputy COE モード） */
@@ -559,7 +557,7 @@ function coeToRoe(chief, deputy) {
   };
 }
 
-/** 現在の ROE スライダー [km] から Deputy COE を逆算 */
+/** 現在の ROE 数値入力 [km] から Deputy COE を逆算 */
 function deputyCoeFromRoeKm(roeKm, chiefCoe) {
   const a_km = chiefCoe.a_km;
   const roe = roeDimensionlessFromKm(roeKm, a_km);
@@ -621,21 +619,12 @@ function roeKmFromDimensionless(roe, a_km) {
   return roeKm;
 }
 
-function clampRoeKm(roeKm) {
-  const { SLIDER_MIN_KM, SLIDER_MAX_KM } = CONFIG;
-  const clamped = {};
-  for (const { key } of ROE_FIELDS) {
-    clamped[key] = Math.min(SLIDER_MAX_KM, Math.max(SLIDER_MIN_KM, roeKm[key]));
-  }
-  return clamped;
-}
-
 function readRoeForPlot() {
   const chief = getChiefCoe();
   if (readInputMode() === "coe") {
     return coeToRoe(chief, readDeputyCoeFromInputs());
   }
-  return readRoeFromSliders();
+  return readRoeFromInputs();
 }
 
 function readRoeKmForDisplay() {
@@ -650,14 +639,11 @@ function updateCoeDerivedDisplay() {
   }
 }
 
-function applyRoeKmToSliders(roeKm) {
-  const clamped = clampRoeKm(roeKm);
-  for (const { key, sliderId, outputId } of ROE_FIELDS) {
-    const slider = document.getElementById(sliderId);
-    const output = document.getElementById(outputId);
-    if (!slider || !output) continue;
-    slider.value = String(clamped[key]);
-    output.textContent = formatKm(clamped[key]);
+function applyRoeKmToInputs(roeKm) {
+  for (const { key, inputId } of ROE_FIELDS) {
+    const input = document.getElementById(inputId);
+    if (!input) continue;
+    input.value = String(roeKm[key]);
   }
 }
 
@@ -677,14 +663,14 @@ function applyDeputyCoeToInputs(deputyCoe) {
   }
 }
 
-function syncDeputyCoeFromRoeSliders() {
+function syncDeputyCoeFromRoeInputs() {
   applyDeputyCoeToInputs(
-    deputyCoeFromRoeKm(readRoeKmFromSliders(), getChiefCoe())
+    deputyCoeFromRoeKm(readRoeKmFromInputs(), getChiefCoe())
   );
 }
 
-function syncRoeSlidersFromDeputyCoe() {
-  applyRoeKmToSliders(readRoeKmForDisplay());
+function syncRoeInputsFromDeputyCoe() {
+  applyRoeKmToInputs(readRoeKmForDisplay());
 }
 
 function setInputMode(mode) {
@@ -704,9 +690,9 @@ function setInputMode(mode) {
   if (radio) radio.checked = true;
 
   if (isRoe) {
-    syncRoeSlidersFromDeputyCoe();
+    syncRoeInputsFromDeputyCoe();
   } else {
-    syncDeputyCoeFromRoeSliders();
+    syncDeputyCoeFromRoeInputs();
     updateCoeDerivedDisplay();
   }
 }
@@ -788,7 +774,7 @@ function formatKm(value) {
   return value.toFixed(2);
 }
 
-/** スライダー [km] → 無次元 ROE（δ ≈ 線形スケール値 / a） */
+/** 数値入力 [km] → 無次元 ROE（δ ≈ 線形スケール値 / a） */
 function roeDimensionlessFromKm(roeKm, a_km) {
   const roe = {};
   for (const { key } of ROE_FIELDS) {
@@ -801,18 +787,20 @@ function readSemiMajorAxisKm() {
   return readChiefCoeFromInputs().a_km;
 }
 
-function readRoeKmFromSliders() {
+function readRoeKmFromInputs() {
+  const defaults = CONFIG.ROE_DEFAULTS_KM;
   const roeKm = {};
-  for (const { key, sliderId } of ROE_FIELDS) {
-    const slider = document.getElementById(sliderId);
-    roeKm[key] = parseFloat(slider.value, 10);
+  for (const { key, inputId } of ROE_FIELDS) {
+    const el = document.getElementById(inputId);
+    const v = parseFloat(el?.value, 10);
+    roeKm[key] = Number.isFinite(v) ? v : defaults[key];
   }
   return roeKm;
 }
 
-function readRoeFromSliders() {
+function readRoeFromInputs() {
   const a_km = readSemiMajorAxisKm();
-  return roeDimensionlessFromKm(readRoeKmFromSliders(), a_km);
+  return roeDimensionlessFromKm(readRoeKmFromInputs(), a_km);
 }
 
 function readNumDriftOrbits() {
@@ -849,26 +837,18 @@ function updateDriftRateDisplay(a_km, roeKm) {
     `T_orbit ≈ ${periodHr.toFixed(2)} h`;
 }
 
-function initSliders() {
-  const { SLIDER_MIN_KM, SLIDER_MAX_KM, SLIDER_STEP_KM, ROE_DEFAULTS_KM } = CONFIG;
+function initRoeInputs() {
+  applyRoeKmToInputs(CONFIG.ROE_DEFAULTS_KM);
 
-  for (const { key, sliderId, outputId } of ROE_FIELDS) {
-    const slider = document.getElementById(sliderId);
-    const output = document.getElementById(outputId);
-
-    slider.min = String(SLIDER_MIN_KM);
-    slider.max = String(SLIDER_MAX_KM);
-    slider.step = String(SLIDER_STEP_KM);
-    slider.value = String(ROE_DEFAULTS_KM[key]);
-    output.textContent = formatKm(ROE_DEFAULTS_KM[key]);
-
-    slider.addEventListener("input", () => {
-      const km = parseFloat(slider.value, 10);
-      output.textContent = formatKm(km);
-      updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmFromSliders());
+  document.querySelectorAll(".roe-input").forEach((input) => {
+    const handler = () => {
+      if (readInputMode() !== "roe") return;
+      updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmFromInputs());
       updateAllPlots();
-    });
-  }
+    };
+    input.addEventListener("input", handler);
+    input.addEventListener("change", handler);
+  });
 }
 
 /** Plotly.react はトレース数変更に弱い → 構造が変わったら newPlot */
@@ -1666,7 +1646,7 @@ function updateAllPlots(forceNewPlot = false) {
 // ---------------------------------------------------------------------------
 
 function init() {
-  initSliders();
+  initRoeInputs();
   initChiefCoeInputs();
   initDeputyCoeInputs();
   initInputModeControl();

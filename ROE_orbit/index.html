@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ROE → RTN 相対軌道可視化</title>
-  <link rel="stylesheet" href="style.css">
+  <title>ROE 相対軌道可視化</title>
+  <link rel="stylesheet" href="style.css?v=16">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
-  <script src="main.js?v=15" defer></script>
+  <script src="main.js?v=16" defer></script>
 </head>
 <body>
   <header class="app-header">
-    <h1>ROE → RTN 相対軌道可視化</h1>
+    <h1>ROE 相対軌道可視化</h1>
     <p class="subtitle">ROE から RTN 相対軌道と ECI（慣性系）での絶対軌道を可視化（線形近似）</p>
+    <p class="header-nav"><a href="../">← デモ一覧</a> · <a href="../RMEE_orbit/">RMEE 相対軌道可視化</a></p>
   </header>
 
   <main class="app-layout">
@@ -56,56 +57,26 @@
 
         <div id="roe-input-panel">
           <p class="section-hint">
-            線形近似で <var>a</var>·δ に対応するスケール。スライダーは km、内部で δ = 値/<var>a</var> に変換します。
+            線形近似で <var>a</var>·δ に対応するスケール。入力は km、内部で δ = 値/<var>a</var> に変換します。
           </p>
 
-          <div class="roe-control" data-roe="delta_a">
-            <div class="roe-header">
-              <label for="roe-delta-a"><var>a</var>·δ<var>a</var> [km]</label>
-              <output id="val-delta-a" for="roe-delta-a">1</output>
-            </div>
-            <input type="range" id="roe-delta-a" class="roe-slider">
-          </div>
+          <label class="field-label" for="roe-delta-a"><var>a</var>·δ<var>a</var> [km]</label>
+          <input type="number" id="roe-delta-a" class="number-input roe-input" value="1" step="0.5">
 
-          <div class="roe-control" data-roe="delta_lambda">
-            <div class="roe-header">
-              <label for="roe-delta-lambda"><var>a</var>·δλ [km]</label>
-              <output id="val-delta-lambda" for="roe-delta-lambda">100</output>
-            </div>
-            <input type="range" id="roe-delta-lambda" class="roe-slider">
-          </div>
+          <label class="field-label" for="roe-delta-lambda"><var>a</var>·δλ [km]</label>
+          <input type="number" id="roe-delta-lambda" class="number-input roe-input" value="100" step="0.5">
 
-          <div class="roe-control" data-roe="delta_ex">
-            <div class="roe-header">
-              <label for="roe-delta-ex"><var>a</var>·δ<var>e</var><sub>x</sub> [km]</label>
-              <output id="val-delta-ex" for="roe-delta-ex">10</output>
-            </div>
-            <input type="range" id="roe-delta-ex" class="roe-slider">
-          </div>
+          <label class="field-label" for="roe-delta-ex"><var>a</var>·δ<var>e</var><sub>x</sub> [km]</label>
+          <input type="number" id="roe-delta-ex" class="number-input roe-input" value="10" step="0.5">
 
-          <div class="roe-control" data-roe="delta_ey">
-            <div class="roe-header">
-              <label for="roe-delta-ey"><var>a</var>·δ<var>e</var><sub>y</sub> [km]</label>
-              <output id="val-delta-ey" for="roe-delta-ey">0</output>
-            </div>
-            <input type="range" id="roe-delta-ey" class="roe-slider">
-          </div>
+          <label class="field-label" for="roe-delta-ey"><var>a</var>·δ<var>e</var><sub>y</sub> [km]</label>
+          <input type="number" id="roe-delta-ey" class="number-input roe-input" value="0" step="0.5">
 
-          <div class="roe-control" data-roe="delta_ix">
-            <div class="roe-header">
-              <label for="roe-delta-ix"><var>a</var>·δ<var>i</var><sub>x</sub> [km]</label>
-              <output id="val-delta-ix" for="roe-delta-ix">30</output>
-            </div>
-            <input type="range" id="roe-delta-ix" class="roe-slider">
-          </div>
+          <label class="field-label" for="roe-delta-ix"><var>a</var>·δ<var>i</var><sub>x</sub> [km]</label>
+          <input type="number" id="roe-delta-ix" class="number-input roe-input" value="30" step="0.5">
 
-          <div class="roe-control" data-roe="delta_iy">
-            <div class="roe-header">
-              <label for="roe-delta-iy"><var>a</var>·δ<var>i</var><sub>y</sub> [km]</label>
-              <output id="val-delta-iy" for="roe-delta-iy">0</output>
-            </div>
-            <input type="range" id="roe-delta-iy" class="roe-slider">
-          </div>
+          <label class="field-label" for="roe-delta-iy"><var>a</var>·δ<var>i</var><sub>y</sub> [km]</label>
+          <input type="number" id="roe-delta-iy" class="number-input roe-input" value="0" step="0.5">
         </div>
 
         <div id="coe-input-panel" hidden>

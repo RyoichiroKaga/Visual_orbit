@@ -3,23 +3,291 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RMEE_orbit — 準備中</title>
-  <link rel="stylesheet" href="style.css">
+  <title>RMEE 相対軌道可視化</title>
+  <link rel="stylesheet" href="style.css?v=4">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
+  <script src="main.js?v=13" defer></script>
 </head>
 <body>
   <header class="app-header">
-    <h1>RMEE_orbit</h1>
-    <p class="subtitle">Relative Mean Element Error（RMEE）に基づく相対軌道可視化</p>
+    <h1>RMEE 相対軌道可視化</h1>
+    <p class="subtitle">MEE / RMEE の定義・変換と ECI（慣性系）での絶対軌道可視化</p>
+    <p class="header-nav"><a href="../">← デモ一覧</a> · <a href="../ROE_orbit/">ROE 相対軌道可視化</a></p>
   </header>
 
-  <main class="placeholder-main">
-    <p class="placeholder-message">このデモは現在準備中です。</p>
-    <p class="placeholder-hint">
-      ROE ベースの可視化は
-      <a href="../ROE_orbit/">ROE_orbit</a>
-      をご利用ください。
-    </p>
-    <p><a href="../">← デモ一覧に戻る</a></p>
+  <nav class="mode-tabs" role="tablist" aria-label="表示モード">
+    <button type="button" class="mode-tab is-active" data-mode="coe-mee" role="tab">COE ↔ MEE</button>
+    <button type="button" class="mode-tab" data-mode="rmee-def" role="tab">RMEE 定義</button>
+    <button type="button" class="mode-tab" data-mode="rmee" role="tab">RMEE</button>
+  </nav>
+
+  <main class="app-layout">
+    <aside class="control-panel">
+      <!-- Tab 1: COE ↔ MEE -->
+      <div class="mode-panel" id="panel-coe-mee" role="tabpanel">
+        <section class="panel-section">
+          <h2>変換の入力</h2>
+          <div class="input-mode-options mode-options">
+            <label class="mode-option">
+              <input type="radio" name="coe-mee-input-mode" value="coe-to-mee" checked>
+              COE → MEE
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="coe-mee-input-mode" value="mee-to-coe">
+              MEE → COE
+            </label>
+          </div>
+
+          <div id="coe-to-mee-panel">
+            <p class="section-hint">COE から Modified Equinoctial Elements（MEE）へ変換します。</p>
+
+            <h3 class="panel-subheading">COE 入力</h3>
+            <label class="field-label" for="chief-a">半長軸 <var>a</var> [km]</label>
+            <input type="number" id="chief-a" class="number-input chief-input" value="42164" min="1000" max="1000000" step="1">
+            <label class="field-label" for="chief-e">離心率 <var>e</var></label>
+            <input type="number" id="chief-e" class="number-input chief-input" value="0" min="0" max="0.9" step="0.000001">
+            <label class="field-label" for="chief-i">軌道傾斜角 <var>i</var> [°]</label>
+            <input type="number" id="chief-i" class="number-input chief-input" value="0" min="0" max="180" step="0.001">
+            <label class="field-label" for="chief-raan">昇交点赤経 <var>Ω</var> [°]</label>
+            <input type="number" id="chief-raan" class="number-input chief-input" value="0" min="0" max="360" step="0.01">
+            <label class="field-label" for="chief-argp">近地点幅角 <var>ω</var> [°]</label>
+            <input type="number" id="chief-argp" class="number-input chief-input" value="0" min="0" max="360" step="0.01">
+            <label class="field-label" for="chief-M">平均近点角 <var>M</var> [°]</label>
+            <input type="number" id="chief-M" class="number-input chief-input" value="0" min="0" max="360" step="0.001">
+
+            <div class="equations">
+              <p><strong>α</strong> = [ <var>p</var>, <var>L</var>, <var>f</var>, <var>g</var>, <var>h</var>, <var>k</var> ]<sup>T</sup></p>
+              <p><var>p</var> = <var>a</var>(1 − <var>e</var>²) [km]</p>
+              <p><var>L</var> = <var>Ω</var> + <var>ω</var> + <var>ν</var>（真経度）</p>
+              <p><var>f</var> = <var>e</var> cos(<var>Ω</var> + <var>ω</var>)</p>
+              <p><var>g</var> = <var>e</var> sin(<var>Ω</var> + <var>ω</var>)</p>
+              <p><var>h</var> = tan(<var>i</var>/2) cos <var>Ω</var></p>
+              <p><var>k</var> = tan(<var>i</var>/2) sin <var>Ω</var></p>
+            </div>
+          </div>
+
+          <div id="mee-to-coe-panel" hidden>
+            <p class="section-hint">MEE を直接入力し、古典軌道要素 COE へ逆変換します。</p>
+            <div data-mee-group="conv-mee"></div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2>変換結果</h2>
+          <div id="coe-mee-result-mee" class="result-stack">
+            <div class="result-block">
+              <p class="result-block__title">MEE α = [ <var>p</var>, <var>L</var>, <var>f</var>, <var>g</var>, <var>h</var>, <var>k</var> ]</p>
+              <ul class="result-list" id="list-coe-mee-mee"></ul>
+            </div>
+          </div>
+          <div id="coe-mee-result-coe" class="result-stack" hidden>
+            <div class="result-block">
+              <p class="result-block__title">COE（MEE から逆変換）</p>
+              <ul class="result-list" id="list-coe-mee-coe"></ul>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Tab 2: RMEE definition -->
+      <div class="mode-panel" id="panel-rmee-def" role="tabpanel" hidden>
+        <section class="panel-section">
+          <h2>RMEE の定義</h2>
+          <p class="section-hint">
+            δ<strong>α</strong> = <strong>α</strong><sub>d</sub> − <strong>α</strong><sub>c</sub>。
+            第1成分のみ δ<var>p</var>/<var>p</var><sub>c</sub> と正規化します。
+          </p>
+          <div class="equations">
+            <p>δ<strong>α</strong> = [ δ<var>p</var>/<var>p</var><sub>c</sub>, δ<var>L</var>, δ<var>f</var>, δ<var>g</var>, δ<var>h</var>, δ<var>k</var> ]<sup>T</sup></p>
+            <p>δ<var>p</var>/<var>p</var><sub>c</sub> = (<var>p</var><sub>d</sub> − <var>p</var><sub>c</sub>) / <var>p</var><sub>c</sub></p>
+            <p>δ<var>L</var> = <var>L</var><sub>d</sub> − <var>L</var><sub>c</sub></p>
+            <p>δ<var>f</var> = <var>f</var><sub>d</sub> − <var>f</var><sub>c</sub></p>
+            <p>δ<var>g</var> = <var>g</var><sub>d</sub> − <var>g</var><sub>c</sub></p>
+            <p>δ<var>h</var> = <var>h</var><sub>d</sub> − <var>h</var><sub>c</sub></p>
+            <p>δ<var>k</var> = <var>k</var><sub>d</sub> − <var>k</var><sub>c</sub></p>
+          </div>
+        </section>
+        <section class="panel-section">
+          <h2>例（Chief / Deputy → RMEE）</h2>
+          <div class="result-stack" id="result-rmee-def"></div>
+        </section>
+      </div>
+
+      <!-- Tab 3: RMEE -->
+      <div class="mode-panel" id="panel-rmee" role="tabpanel" hidden>
+        <section class="panel-section">
+          <h2>1. Chief の定義</h2>
+          <div class="input-mode-options mode-options">
+            <label class="mode-option">
+              <input type="radio" name="chief-def-mode" value="coe" checked>
+              1−1. COE で定義
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="chief-def-mode" value="mee">
+              1−2. MEE で定義
+            </label>
+          </div>
+
+          <div id="chief-def-coe-panel">
+            <label class="field-label" for="rmee-chief-a">半長軸 <var>a</var> [km]</label>
+            <input type="number" id="rmee-chief-a" class="number-input rmee-chief-coe-input" value="42164" min="1000" max="1000000" step="1">
+            <label class="field-label" for="rmee-chief-e">離心率 <var>e</var></label>
+            <input type="number" id="rmee-chief-e" class="number-input rmee-chief-coe-input" value="0" min="0" max="0.9" step="0.000001">
+            <label class="field-label" for="rmee-chief-i">軌道傾斜角 <var>i</var> [°]</label>
+            <input type="number" id="rmee-chief-i" class="number-input rmee-chief-coe-input" value="0" min="0" max="180" step="0.001">
+            <label class="field-label" for="rmee-chief-raan">昇交点赤経 <var>Ω</var> [°]</label>
+            <input type="number" id="rmee-chief-raan" class="number-input rmee-chief-coe-input" value="0" min="0" max="360" step="0.01">
+            <label class="field-label" for="rmee-chief-argp">近地点幅角 <var>ω</var> [°]</label>
+            <input type="number" id="rmee-chief-argp" class="number-input rmee-chief-coe-input" value="0" min="0" max="360" step="0.01">
+            <label class="field-label" for="rmee-chief-M">平均近点角 <var>M</var> [°]</label>
+            <input type="number" id="rmee-chief-M" class="number-input rmee-chief-coe-input" value="0" min="0" max="360" step="0.001">
+          </div>
+
+          <div id="chief-def-mee-panel" hidden>
+            <div data-mee-group="chief-mee"></div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2>2. Deputy の定義</h2>
+          <div class="input-mode-options mode-options">
+            <label class="mode-option">
+              <input type="radio" name="deputy-def-mode" value="coe" checked>
+              2−1. COE で定義
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="deputy-def-mode" value="mee">
+              2−2. MEE で定義
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="deputy-def-mode" value="rmee">
+              2−3. RMEE で定義
+            </label>
+          </div>
+
+          <div id="deputy-def-coe-panel">
+            <label class="field-label" for="deputy-a">Deputy 半長軸 <var>a</var><sub>d</sub> [km]</label>
+            <input type="number" id="deputy-a" class="number-input deputy-input" value="42165" min="1000" max="1000000" step="1">
+            <label class="field-label" for="deputy-e">Deputy 離心率 <var>e</var><sub>d</sub></label>
+            <input type="number" id="deputy-e" class="number-input deputy-input" value="0.000237" min="0" max="0.9" step="0.000001">
+            <label class="field-label" for="deputy-i">Deputy 軌道傾斜角 <var>i</var><sub>d</sub> [°]</label>
+            <input type="number" id="deputy-i" class="number-input deputy-input" value="0.0407" min="0" max="180" step="0.001">
+            <label class="field-label" for="deputy-raan">Deputy 昇交点赤経 <var>Ω</var><sub>d</sub> [°]</label>
+            <input type="number" id="deputy-raan" class="number-input deputy-input" value="0" min="0" max="360" step="0.01">
+            <label class="field-label" for="deputy-argp">Deputy 近地点幅角 <var>ω</var><sub>d</sub> [°]</label>
+            <input type="number" id="deputy-argp" class="number-input deputy-input" value="0" min="0" max="360" step="0.01">
+            <label class="field-label" for="deputy-M">Deputy 平均近点角 <var>M</var><sub>d</sub> [°]</label>
+            <input type="number" id="deputy-M" class="number-input deputy-input" value="0.1359" min="0" max="360" step="0.001">
+          </div>
+
+          <div id="deputy-def-mee-panel" hidden>
+            <div data-mee-group="deputy-mee"></div>
+          </div>
+
+          <div id="deputy-def-rmee-panel" hidden>
+            <p class="section-hint">Chief MEE に対する相対量 δ<strong>α</strong> を直接入力します。</p>
+            <div data-rmee-group="deputy-rmee"></div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2>変換結果</h2>
+          <div class="result-stack" id="result-rmee"></div>
+        </section>
+      </div>
+
+      <section class="panel-section" id="orbit-display-section" hidden>
+        <h2>軌道表示</h2>
+        <p class="section-hint">
+          δλ(<var>t</var>) = δλ<sub>0</sub> − (3/2)<var>n</var>·δ<var>a</var>·<var>t</var>（ROE 線形近似、Δa = 0 のとき各周は閉曲線）。
+        </p>
+        <label class="field-label" for="num-drift-orbits">表示軌道周回数</label>
+        <div class="roe-header">
+          <input type="range" id="num-drift-orbits" class="roe-slider" min="1" max="20" step="1" value="5">
+          <output id="val-num-drift-orbits" for="num-drift-orbits">5</output>
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="show-single-orbit-ref" checked>
+          参考: δλ 固定の 1 周（閉曲線）を重ね表示
+        </label>
+        <p class="drift-rate" id="drift-rate-display"></p>
+      </section>
+    </aside>
+
+    <div class="plot-area">
+      <nav class="view-tabs" id="view-tabs" role="tablist" aria-label="表示座標系">
+        <button type="button" class="view-tab" data-view="rtn" role="tab" id="view-tab-rtn" aria-selected="false" aria-controls="view-panel-rtn" tabindex="-1">
+          RTN 相対軌道
+        </button>
+        <button type="button" class="view-tab is-active" data-view="eci" role="tab" id="view-tab-eci" aria-selected="true" aria-controls="view-panel-eci">
+          ECI 絶対軌道
+        </button>
+      </nav>
+
+      <div class="view-panel" id="view-panel-rtn" role="tabpanel" aria-labelledby="view-tab-rtn" hidden>
+        <section class="plot-block plot-block--main">
+          <h2 class="plot-title">3D — RTN 相対軌道</h2>
+          <p class="plot-caption" id="plot-3d-caption">
+            横軸: T、縦軸: R、奥行き: N [km]（chief は原点）。● 始点（u≈0）、■ 終点。
+          </p>
+          <div id="plot-3d" class="plot-container"></div>
+        </section>
+        <section class="plot-block plot-block--projections">
+          <h2 class="plot-title">RTN — 2D 投影</h2>
+          <div class="projection-grid">
+            <div class="projection-cell">
+              <h3>T–R 平面</h3>
+              <div id="plot-tr" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>T–N 平面</h3>
+              <div id="plot-tn" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>R–N 平面</h3>
+              <div id="plot-rn" class="plot-container plot-container--small"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="view-panel is-active" id="view-panel-eci" role="tabpanel" aria-labelledby="view-tab-eci">
+        <section class="plot-block plot-block--eci">
+          <h2 class="plot-title" id="plot-eci-title">3D — ECI（慣性系・実スケール）</h2>
+          <div id="eci-exaggeration-section" hidden>
+            <label class="field-label" for="eci-exaggeration">表示用誇張倍率 <var>k</var> = 10<sup>n</sup></label>
+            <div class="roe-header">
+              <input type="range" id="eci-exaggeration" class="roe-slider" min="0" max="4" step="1" value="3">
+              <output id="val-eci-exaggeration" for="eci-exaggeration">1000</output>
+            </div>
+            <p class="section-hint plot-hint--eci">n=0 → k=1（実スケール）、n=4 → k=10000。初期値 k=1000。</p>
+          </div>
+          <p class="plot-caption" id="plot-eci-caption"></p>
+          <div id="plot-eci-3d" class="plot-container"></div>
+        </section>
+        <section class="plot-block plot-block--projections">
+          <h2 class="plot-title" id="plot-eci-proj-title">ECI — 2D 投影</h2>
+          <div class="projection-grid">
+            <div class="projection-cell">
+              <h3>X–Y 平面</h3>
+              <div id="plot-eci-xy" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>X–Z 平面</h3>
+              <div id="plot-eci-xz" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>Y–Z 平面</h3>
+              <div id="plot-eci-yz" class="plot-container plot-container--small"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
   </main>
+
+  <footer class="app-footer">
+    <p>教育・研究補助用デモ — 近円軌道・線形 ROE 近似・摂動なし（厳密伝播ではありません）</p>
+  </footer>
 </body>
 </html>

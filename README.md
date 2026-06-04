@@ -1,4 +1,4 @@
-# ROE → RTN 相対軌道可視化
+# ROE 相対軌道可視化
 
 Relative Orbital Elements（ROE）の各パラメータをスライダーで調整しながら、chief 衛星に対する deputy 衛星の相対軌道を **RTN 座標系**でリアルタイムに確認するための、教育・研究補助用 Web デモです。
 
@@ -78,13 +78,14 @@ t = k\frac{2\pi}{n} + \frac{u}{n}
 .
 ├── index.html        # デモ一覧（ポータル）
 ├── portal.css
-├── ROE_orbit/       # ROE → RTN / ECI 可視化
+├── ROE_orbit/       # ROE 相対軌道 / ECI 可視化
 │   ├── index.html
 │   ├── style.css
 │   └── main.js
-├── RMEE_orbit/      # RMEE 可視化（準備中）
+├── RMEE_orbit/      # RMEE 相対軌道 / ECI 可視化
 │   ├── index.html
-│   └── style.css
+│   ├── style.css
+│   └── main.js
 └── README.md
 ```
 

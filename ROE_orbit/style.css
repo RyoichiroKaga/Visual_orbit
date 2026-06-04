@@ -1,4 +1,4 @@
-/* ROE → RTN 相対軌道可視化 — 研究デモ向けダークテーマ */
+/* ROE 相対軌道可視化 — 研究デモ向けダークテーマ */
 
 :root {
   --bg-deep: #0d1117;
@@ -47,14 +47,27 @@ body {
 .app-header h1 {
   margin: 0;
   font-size: 1.35rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .subtitle {
   margin: 0.35rem 0 0;
   font-size: 0.9rem;
   color: var(--text-muted);
+}
+
+.header-nav {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.header-nav a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.header-nav a:hover {
+  text-decoration: underline;
 }
 
 /* Main layout: controls left, plots right */
@@ -187,6 +200,10 @@ body {
 }
 
 .coe-input {
+  margin-bottom: 0.65rem;
+}
+
+.roe-input {
   margin-bottom: 0.65rem;
 }
 
