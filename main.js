@@ -1018,87 +1018,13 @@ function updateEciCaption(exaggerationK) {
 
   if (exaggerationK <= 1) {
     el.textContent =
-      "実スケール（k=1）。deputy は chief 軌道にほぼ重なって見えます。" +
-      " 軸 [km] は表示座標＝実 ECI 座標です。";
+      "実スケール（k=1）。deputy は chief 軌道にほぼ重なって見えます。";
     return;
   }
 
   el.textContent =
-    `表示式: r = r_chief + k·(r_deputy−r_chief)、k=${exaggerationK}。` +
-    " 軸 [km] は表示座標（chief・地球は実スケール、deputy の相対ずれのみ ×k）。" +
-    " 実相対距離は下のパネルを参照。";
-}
-
-/** 軌道サンプルから実相対距離 [km] の統計を算出 */
-function computeRelativeDistanceStats(samples) {
-  if (!samples || samples.length === 0) return null;
-
-  let maxAbsR = 0;
-  let maxAbsT = 0;
-  let maxAbsN = 0;
-  let maxNorm = 0;
-  let minR = Infinity;
-  let maxR = -Infinity;
-  let minT = Infinity;
-  let maxT = -Infinity;
-  let minN = Infinity;
-  let maxN = -Infinity;
-
-  for (const sample of samples) {
-    const { R_km, T_km, N_km } = sample;
-    maxAbsR = Math.max(maxAbsR, Math.abs(R_km));
-    maxAbsT = Math.max(maxAbsT, Math.abs(T_km));
-    maxAbsN = Math.max(maxAbsN, Math.abs(N_km));
-    maxNorm = Math.max(maxNorm, Math.hypot(R_km, T_km, N_km));
-    minR = Math.min(minR, R_km);
-    maxR = Math.max(maxR, R_km);
-    minT = Math.min(minT, T_km);
-    maxT = Math.max(maxT, T_km);
-    minN = Math.min(minN, N_km);
-    maxN = Math.max(maxN, N_km);
-  }
-
-  return {
-    maxAbsR,
-    maxAbsT,
-    maxAbsN,
-    maxNorm,
-    spanR: maxR - minR,
-    spanT: maxT - minT,
-    spanN: maxN - minN,
-  };
-}
-
-function updateEciTrueDistanceDisplay(samples, exaggerationK) {
-  const el = document.getElementById("eci-true-distance");
-  if (!el) return;
-
-  const stats = computeRelativeDistanceStats(samples);
-  if (!stats) {
-    el.textContent = "";
-    return;
-  }
-
-  const k = exaggerationK;
-  const lines = [
-    "実相対距離（ROE 線形近似・RTN、表示軌道全体）",
-    `  |Δr|max = ${formatKm(stats.maxNorm)} km`,
-    `  R: 最大 |R| = ${formatKm(stats.maxAbsR)} km、範囲 ${formatKm(stats.spanR)} km`,
-    `  T: 最大 |T| = ${formatKm(stats.maxAbsT)} km、範囲 ${formatKm(stats.spanT)} km`,
-    `  N: 最大 |N| = ${formatKm(stats.maxAbsN)} km、範囲 ${formatKm(stats.spanN)} km`,
-  ];
-
-  if (k > 1) {
-    lines.push(
-      "",
-      `表示上の deputy 相対オフセット（目安）≈ 実距離 × k = ${formatKm(stats.maxNorm * k)} km`,
-      "（chief 半径・地球サイズは誇張されません）"
-    );
-  } else {
-    lines.push("", "k=1: 表示座標＝実 ECI 座標（相対ずれは chief に重なって見えにくい場合があります）");
-  }
-
-  el.textContent = lines.join("\n");
+    `表示専用: r = r_chief + k·(r_deputy−r_chief)、k=${exaggerationK}。` +
+    "実際の相対距離は km オーダ（RTN プロット参照）。";
 }
 
 function plotDivExists(id) {
@@ -1252,7 +1178,6 @@ function updateAllPlots(forceNewPlot = false) {
     exaggerationK,
   } = buildEciExaggeratedOrbitData(a_km, primarySamples, referenceSamples);
   updateEciCaption(exaggerationK);
-  updateEciTrueDistanceDisplay(primarySamples, exaggerationK);
 
   const earthEquator = buildEarthEquatorCrossSectionEci();
   const axisRanges3d = computeEciAxisRanges([

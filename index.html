@@ -6,7 +6,7 @@
   <title>ROE → RTN 相対軌道可視化</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
-  <script src="main.js?v=11" defer></script>
+  <script src="main.js?v=12" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -30,6 +30,20 @@
           max="1000000"
           step="1"
         >
+        <div class="chief-coe-memo">
+          <p class="chief-coe-memo__title">COE 初期値（モデル固定）</p>
+          <ul class="chief-coe-list">
+            <li><var>a</var> … 42164 km（GEO 想定・上記入力で変更）</li>
+            <li><var>e</var> … 0（近円軌道）</li>
+            <li><var>i</var> … 0°（赤道面、ECI の XY 平面内）</li>
+            <li><var>Ω</var> … 0°（<var>i</var> = 0 のため実質任意）</li>
+            <li><var>ω</var> … 0°（<var>e</var> = 0 のため実質任意）</li>
+            <li><var>u</var><sub>0</sub> … 0°（描画始点・引数緯度）</li>
+          </ul>
+          <p class="section-hint chief-coe-note">
+            本デモは chief を近円・赤道軌道とみなし、<var>u</var> = 0 から 1 周サンプルします。
+          </p>
+        </div>
       </section>
 
       <section class="panel-section">
@@ -225,7 +239,6 @@
           </div>
           <p class="section-hint">n=0 → k=1（実スケール）、n=4 → k=10000。初期値 k=1000。</p>
           <p class="plot-caption" id="plot-eci-caption"></p>
-          <div class="eci-true-distance" id="eci-true-distance" aria-live="polite"></div>
           <div id="plot-eci-3d" class="plot-container"></div>
         </section>
 
