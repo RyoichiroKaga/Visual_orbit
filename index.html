@@ -6,7 +6,7 @@
   <title>ROE → RTN 相対軌道可視化</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
-  <script src="main.js?v=12" defer></script>
+  <script src="main.js?v=14" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -17,87 +17,131 @@
   <main class="app-layout">
     <aside class="control-panel">
       <section class="panel-section">
-        <h2>Chief 軌道</h2>
-        <label class="field-label" for="semi-major-axis">
-          半長軸 <var>a</var> [km]
-        </label>
-        <input
-          type="number"
-          id="semi-major-axis"
-          class="number-input"
-          value="42164"
-          min="1000"
-          max="1000000"
-          step="1"
-        >
-        <div class="chief-coe-memo">
-          <p class="chief-coe-memo__title">COE 初期値（モデル固定）</p>
-          <ul class="chief-coe-list">
-            <li><var>a</var> … 42164 km（GEO 想定・上記入力で変更）</li>
-            <li><var>e</var> … 0（近円軌道）</li>
-            <li><var>i</var> … 0°（赤道面、ECI の XY 平面内）</li>
-            <li><var>Ω</var> … 0°（<var>i</var> = 0 のため実質任意）</li>
-            <li><var>ω</var> … 0°（<var>e</var> = 0 のため実質任意）</li>
-            <li><var>u</var><sub>0</sub> … 0°（描画始点・引数緯度）</li>
-          </ul>
-          <p class="section-hint chief-coe-note">
-            本デモは chief を近円・赤道軌道とみなし、<var>u</var> = 0 から 1 周サンプルします。
-          </p>
-        </div>
+        <h2>Chief 軌道（COE）</h2>
+        <p class="section-hint">
+          ECI 表示と COE→ROE 変換の基準。サンプルは引数緯度 <var>u</var> = <var>ω</var> + <var>ν</var> を 0 → 2π で走査します。
+        </p>
+
+        <label class="field-label" for="chief-a">半長軸 <var>a</var> [km]</label>
+        <input type="number" id="chief-a" class="number-input chief-input" value="42164" min="1000" max="1000000" step="1">
+
+        <label class="field-label" for="chief-e">離心率 <var>e</var></label>
+        <input type="number" id="chief-e" class="number-input chief-input" value="0" min="0" max="0.9" step="0.000001">
+
+        <label class="field-label" for="chief-i">軌道傾斜角 <var>i</var> [°]</label>
+        <input type="number" id="chief-i" class="number-input chief-input" value="0" min="0" max="180" step="0.001">
+
+        <label class="field-label" for="chief-raan">昇交点赤経 <var>Ω</var> [°]</label>
+        <input type="number" id="chief-raan" class="number-input chief-input" value="0" min="0" max="360" step="0.01">
+
+        <label class="field-label" for="chief-argp">近地点幅角 <var>ω</var> [°]</label>
+        <input type="number" id="chief-argp" class="number-input chief-input" value="0" min="0" max="360" step="0.01">
+
+        <label class="field-label" for="chief-M">平均近点角 <var>M</var> [°]</label>
+        <input type="number" id="chief-M" class="number-input chief-input" value="0" min="0" max="360" step="0.001">
       </section>
 
       <section class="panel-section">
-        <h2>相対軌道パラメータ [km]</h2>
-        <p class="section-hint">
-          線形近似で <var>a</var>·δ に対応するスケール。スライダーは km、内部で δ = 値/<var>a</var> に変換します。
-        </p>
-
-        <div class="roe-control" data-roe="delta_a">
-          <div class="roe-header">
-            <label for="roe-delta-a"><var>a</var>·δ<var>a</var> [km]</label>
-            <output id="val-delta-a" for="roe-delta-a">0</output>
-          </div>
-          <input type="range" id="roe-delta-a" class="roe-slider">
+        <h2>相対軌道の入力</h2>
+        <div class="input-mode-options mode-options">
+          <label class="mode-option">
+            <input type="radio" name="input-mode" value="roe" checked>
+            ROE 直接 [km]
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="input-mode" value="coe">
+            Deputy COE → ROE
+          </label>
         </div>
 
-        <div class="roe-control" data-roe="delta_lambda">
-          <div class="roe-header">
-            <label for="roe-delta-lambda"><var>a</var>·δλ [km]</label>
-            <output id="val-delta-lambda" for="roe-delta-lambda">4.22</output>
+        <div id="roe-input-panel">
+          <p class="section-hint">
+            線形近似で <var>a</var>·δ に対応するスケール。スライダーは km、内部で δ = 値/<var>a</var> に変換します。
+          </p>
+
+          <div class="roe-control" data-roe="delta_a">
+            <div class="roe-header">
+              <label for="roe-delta-a"><var>a</var>·δ<var>a</var> [km]</label>
+              <output id="val-delta-a" for="roe-delta-a">0</output>
+            </div>
+            <input type="range" id="roe-delta-a" class="roe-slider">
           </div>
-          <input type="range" id="roe-delta-lambda" class="roe-slider">
+
+          <div class="roe-control" data-roe="delta_lambda">
+            <div class="roe-header">
+              <label for="roe-delta-lambda"><var>a</var>·δλ [km]</label>
+              <output id="val-delta-lambda" for="roe-delta-lambda">4.22</output>
+            </div>
+            <input type="range" id="roe-delta-lambda" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_ex">
+            <div class="roe-header">
+              <label for="roe-delta-ex"><var>a</var>·δ<var>e</var><sub>x</sub> [km]</label>
+              <output id="val-delta-ex" for="roe-delta-ex">4.22</output>
+            </div>
+            <input type="range" id="roe-delta-ex" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_ey">
+            <div class="roe-header">
+              <label for="roe-delta-ey"><var>a</var>·δ<var>e</var><sub>y</sub> [km]</label>
+              <output id="val-delta-ey" for="roe-delta-ey">0</output>
+            </div>
+            <input type="range" id="roe-delta-ey" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_ix">
+            <div class="roe-header">
+              <label for="roe-delta-ix"><var>a</var>·δ<var>i</var><sub>x</sub> [km]</label>
+              <output id="val-delta-ix" for="roe-delta-ix">4.22</output>
+            </div>
+            <input type="range" id="roe-delta-ix" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_iy">
+            <div class="roe-header">
+              <label for="roe-delta-iy"><var>a</var>·δ<var>i</var><sub>y</sub> [km]</label>
+              <output id="val-delta-iy" for="roe-delta-iy">0</output>
+            </div>
+            <input type="range" id="roe-delta-iy" class="roe-slider">
+          </div>
         </div>
 
-        <div class="roe-control" data-roe="delta_ex">
-          <div class="roe-header">
-            <label for="roe-delta-ex"><var>a</var>·δ<var>e</var><sub>x</sub> [km]</label>
-            <output id="val-delta-ex" for="roe-delta-ex">4.22</output>
-          </div>
-          <input type="range" id="roe-delta-ex" class="roe-slider">
-        </div>
+        <div id="coe-input-panel" hidden>
+          <p class="section-hint">
+            Chief / Deputy の COE から Gim–Alfriend 準非特異 ROE に変換します（Chief は上記 COE を使用）。
+          </p>
 
-        <div class="roe-control" data-roe="delta_ey">
-          <div class="roe-header">
-            <label for="roe-delta-ey"><var>a</var>·δ<var>e</var><sub>y</sub> [km]</label>
-            <output id="val-delta-ey" for="roe-delta-ey">0</output>
-          </div>
-          <input type="range" id="roe-delta-ey" class="roe-slider">
-        </div>
+          <label class="field-label" for="deputy-a">Deputy 半長軸 <var>a</var><sub>d</sub> [km]</label>
+          <input type="number" id="deputy-a" class="number-input coe-input" value="42164" min="1000" max="1000000" step="1">
 
-        <div class="roe-control" data-roe="delta_ix">
-          <div class="roe-header">
-            <label for="roe-delta-ix"><var>a</var>·δ<var>i</var><sub>x</sub> [km]</label>
-            <output id="val-delta-ix" for="roe-delta-ix">4.22</output>
-          </div>
-          <input type="range" id="roe-delta-ix" class="roe-slider">
-        </div>
+          <label class="field-label" for="deputy-e">Deputy 離心率 <var>e</var><sub>d</sub></label>
+          <input type="number" id="deputy-e" class="number-input coe-input" value="0.0001" min="0" max="0.9" step="0.000001">
 
-        <div class="roe-control" data-roe="delta_iy">
-          <div class="roe-header">
-            <label for="roe-delta-iy"><var>a</var>·δ<var>i</var><sub>y</sub> [km]</label>
-            <output id="val-delta-iy" for="roe-delta-iy">0</output>
+          <label class="field-label" for="deputy-i">Deputy 軌道傾斜角 <var>i</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-i" class="number-input coe-input" value="0.00573" min="0" max="180" step="0.001">
+
+          <label class="field-label" for="deputy-raan">Deputy 昇交点赤経 <var>Ω</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-raan" class="number-input coe-input" value="0" min="0" max="360" step="0.01">
+
+          <label class="field-label" for="deputy-argp">Deputy 近地点幅角 <var>ω</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-argp" class="number-input coe-input" value="0" min="0" max="360" step="0.01">
+
+          <label class="field-label" for="deputy-M">Deputy 平均近点角 <var>M</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-M" class="number-input coe-input" value="0.00573" min="0" max="360" step="0.001">
+
+          <div class="roe-derived">
+            <p class="roe-derived__title">変換後 ROE（<var>a</var>·δ）[km]</p>
+            <ul class="roe-derived-list">
+              <li><var>a</var>·δ<var>a</var> … <output id="coe-val-delta-a">0</output> km</li>
+              <li><var>a</var>·δλ … <output id="coe-val-delta-lambda">4.22</output> km</li>
+              <li><var>a</var>·δ<var>e</var><sub>x</sub> … <output id="coe-val-delta-ex">4.22</output> km</li>
+              <li><var>a</var>·δ<var>e</var><sub>y</sub> … <output id="coe-val-delta-ey">0</output> km</li>
+              <li><var>a</var>·δ<var>i</var><sub>x</sub> … <output id="coe-val-delta-ix">4.22</output> km</li>
+              <li><var>a</var>·δ<var>i</var><sub>y</sub> … <output id="coe-val-delta-iy">0</output> km</li>
+            </ul>
           </div>
-          <input type="range" id="roe-delta-iy" class="roe-slider">
         </div>
       </section>
 

@@ -37,11 +37,18 @@ const CONFIG = {
   /** 地球重力定数 [km³/s²]（平均運動 n の計算用） */
   MU_EARTH_KM3_S2: 398600.4418,
 
-  /** chief 半長軸の初期値 [km]（GEO 想定） */
-  DEFAULT_SEMI_MAJOR_AXIS_KM: 42164,
+  /** Chief COE 初期値（GEO 近円赤道） */
+  DEFAULT_CHIEF_COE: {
+    a_km: 42164,
+    e: 0,
+    i_deg: 0,
+    raan_deg: 0,
+    argp_deg: 0,
+    M_deg: 0,
+  },
 
   /**
-   * スライダー初期値 [km]（a = DEFAULT_SEMI_MAJOR_AXIS_KM 時の従来無次元値 × a）
+   * スライダー初期値 [km]（a = DEFAULT_CHIEF_COE.a_km 時の従来無次元値 × a）
    * 内部計算では δ = (km 値) / a に変換
    */
   ROE_DEFAULTS_KM: {
@@ -63,6 +70,19 @@ const ROE_FIELDS = [
   { key: "delta_ix", sliderId: "roe-delta-ix", outputId: "val-delta-ix" },
   { key: "delta_iy", sliderId: "roe-delta-iy", outputId: "val-delta-iy" },
 ];
+
+/** COE → ROE 変換後の読み取り専用表示（Deputy COE モード） */
+const COE_DERIVED_ROE_OUTPUTS = [
+  { key: "delta_a", outputId: "coe-val-delta-a" },
+  { key: "delta_lambda", outputId: "coe-val-delta-lambda" },
+  { key: "delta_ex", outputId: "coe-val-delta-ex" },
+  { key: "delta_ey", outputId: "coe-val-delta-ey" },
+  { key: "delta_ix", outputId: "coe-val-delta-ix" },
+  { key: "delta_iy", outputId: "coe-val-delta-iy" },
+];
+
+/** @type {"roe" | "coe"} */
+let inputMode = "roe";
 
 const TWO_PI = 2 * Math.PI;
 const DRIFT_LAMBDA_FACTOR = 1.5; // δλ̇ = -(3/2) n δa
@@ -187,32 +207,128 @@ function computeDriftTrajectoryRTN(a_km, roe, numPointsPerOrbit, numOrbits) {
 }
 
 // ---------------------------------------------------------------------------
-// ECI 変換（赤道面内近円 chief 軌道を仮定）
+// ECI 変換（一般 COE の楕円・傾斜 chief 軌道）
 // ---------------------------------------------------------------------------
+
+function normalizeAngleRad(rad) {
+  return ((rad % TWO_PI) + TWO_PI) % TWO_PI;
+}
+
+/** ケプラー方程式 E − e sin E = M を Newton 法で解く */
+function solveKeplerE(M_rad, e, tol = 1e-12) {
+  const M = normalizeAngleRad(M_rad);
+  if (e < 1e-12) return M;
+
+  let E = e < 0.8 ? M : Math.PI;
+  for (let k = 0; k < 60; k++) {
+    const f = E - e * Math.sin(E) - M;
+    const fp = 1 - e * Math.cos(E);
+    const dE = f / fp;
+    E -= dE;
+    if (Math.abs(dE) < tol) break;
+  }
+  return E;
+}
+
+function trueAnomalyFromArgumentOfLatitude(u_rad, argp_rad) {
+  return u_rad - argp_rad;
+}
+
+function radiusFromTrueAnomaly(a_km, e, nu_rad) {
+  return (a_km * (1 - e * e)) / (1 + e * Math.cos(nu_rad));
+}
+
+/** 引数緯度 u における chief 位置 [km]（ECI） */
+function chiefPositionEciKm(coe, u_rad) {
+  const { a_km, e, i_rad, raan_rad, argp_rad } = coe;
+  const nu = trueAnomalyFromArgumentOfLatitude(u_rad, argp_rad);
+  const r = radiusFromTrueAnomaly(a_km, e, nu);
+
+  const cu = Math.cos(u_rad);
+  const su = Math.sin(u_rad);
+  const cO = Math.cos(raan_rad);
+  const sO = Math.sin(raan_rad);
+  const ci = Math.cos(i_rad);
+  const si = Math.sin(i_rad);
+
+  return [
+    r * (cO * cu - sO * su * ci),
+    r * (sO * cu + cO * su * ci),
+    r * su * si,
+  ];
+}
+
+/** 真近点角 ν における chief 速度 [km/s]（ECI, PQW→ECI 回転） */
+function chiefVelocityEciKmS(coe, nu_rad, r_km) {
+  const { a_km, e, i_rad, raan_rad, argp_rad } = coe;
+  const mu = CONFIG.MU_EARTH_KM3_S2;
+  const h = Math.sqrt(mu * a_km * (1 - e * e));
+  const p = a_km * (1 - e * e);
+  const vr = (mu / h) * e * Math.sin(nu_rad);
+  const vt = (mu / h) * (p / r_km);
+
+  const cnu = Math.cos(nu_rad);
+  const snu = Math.sin(nu_rad);
+  const v_pf_x = vr * cnu - vt * snu;
+  const v_pf_y = vr * snu + vt * cnu;
+
+  const cO = Math.cos(raan_rad);
+  const sO = Math.sin(raan_rad);
+  const ci = Math.cos(i_rad);
+  const si = Math.sin(i_rad);
+  const cw = Math.cos(argp_rad);
+  const sw = Math.sin(argp_rad);
+
+  const R11 = cO * cw - sO * sw * ci;
+  const R12 = -cO * sw - sO * cw * ci;
+  const R21 = sO * cw + cO * sw * ci;
+  const R22 = -sO * sw + cO * cw * ci;
+  const R31 = sw * si;
+  const R32 = cw * si;
+
+  return [
+    R11 * v_pf_x + R12 * v_pf_y,
+    R21 * v_pf_x + R22 * v_pf_y,
+    R31 * v_pf_x + R32 * v_pf_y,
+  ];
+}
+
+function normalizeVec3(v) {
+  const n = Math.hypot(v[0], v[1], v[2]);
+  if (n < 1e-12) return [1, 0, 0];
+  return [v[0] / n, v[1] / n, v[2] / n];
+}
+
+function crossVec3(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
 
 /**
  * 引数緯度 u における RTN 基底単位ベクトル（ECI 成分）
- * R̂: 地心→chief 方向, T̂: 速度方向, N̂ = R̂×T̂
+ * R̂: 半径方向, T̂: 沿軌道方向, N̂ = R̂ × T̂
  */
-function rtnBasisEci(u_rad) {
-  const cu = Math.cos(u_rad);
-  const su = Math.sin(u_rad);
-  return {
-    R_hat: [cu, su, 0],
-    T_hat: [-su, cu, 0],
-    N_hat: [0, 0, 1],
-  };
-}
+function rtnBasisEci(coe, u_rad) {
+  const { argp_rad } = coe;
+  const nu = trueAnomalyFromArgumentOfLatitude(u_rad, argp_rad);
+  const r_km = radiusFromTrueAnomaly(coe.a_km, coe.e, nu);
+  const r_vec = chiefPositionEciKm(coe, u_rad);
+  const v_vec = chiefVelocityEciKmS(coe, nu, r_km);
 
-/** chief 位置 [km]（ECI） */
-function chiefPositionEciKm(a_km, u_rad) {
-  const { R_hat } = rtnBasisEci(u_rad);
-  return [a_km * R_hat[0], a_km * R_hat[1], a_km * R_hat[2]];
+  const R_hat = normalizeVec3(r_vec);
+  const h_vec = crossVec3(r_vec, v_vec);
+  const N_hat = normalizeVec3(h_vec);
+  const T_hat = normalizeVec3(crossVec3(N_hat, R_hat));
+
+  return { R_hat, T_hat, N_hat };
 }
 
 /** RTN 相対変位を ECI ベクトル [km] に変換 */
-function relativeRtnToEciKm(R_km, T_km, N_km, u_rad) {
-  const { R_hat, T_hat, N_hat } = rtnBasisEci(u_rad);
+function relativeRtnToEciKm(R_km, T_km, N_km, coe, u_rad) {
+  const { R_hat, T_hat, N_hat } = rtnBasisEci(coe, u_rad);
   return [
     R_km * R_hat[0] + T_km * T_hat[0] + N_km * N_hat[0],
     R_km * R_hat[1] + T_km * T_hat[1] + N_km * N_hat[1],
@@ -241,15 +357,15 @@ function buildEarthEquatorCrossSectionEci() {
   return { x_km, y_km, z_km };
 }
 
-/** chief の 1 周軌道（ECI） */
-function buildChiefOrbitEci(a_km, numPoints) {
+/** chief の 1 周軌道（ECI, 引数緯度 u でサンプル） */
+function buildChiefOrbitEci(coe, numPoints) {
   const x_km = [];
   const y_km = [];
   const z_km = [];
 
   for (let i = 0; i < numPoints; i++) {
     const u_rad = (TWO_PI * i) / (numPoints - 1);
-    const [x, y, z] = chiefPositionEciKm(a_km, u_rad);
+    const [x, y, z] = chiefPositionEciKm(coe, u_rad);
     x_km.push(x);
     y_km.push(y);
     z_km.push(z);
@@ -262,17 +378,18 @@ function buildChiefOrbitEci(a_km, numPoints) {
  * ECI 誇張表示: r_display = r_chief + k · (r_deputy − r_chief)
  * @param {number} exaggerationK - 表示専用の倍率（1 = 実スケール）
  */
-function samplesToEciExaggeratedOrbit(a_km, samples, exaggerationK) {
+function samplesToEciExaggeratedOrbit(coe, samples, exaggerationK) {
   const x_km = [];
   const y_km = [];
   const z_km = [];
 
   for (const sample of samples) {
-    const chief = chiefPositionEciKm(a_km, sample.u_rad);
+    const chief = chiefPositionEciKm(coe, sample.u_rad);
     const delta = relativeRtnToEciKm(
       sample.R_km,
       sample.T_km,
       sample.N_km,
+      coe,
       sample.u_rad
     );
     x_km.push(chief[0] + exaggerationK * delta[0]);
@@ -289,15 +406,15 @@ function readEciExaggerationFactor() {
   return Math.pow(10, Number.isFinite(logExp) ? logExp : CONFIG.DEFAULT_ECI_EXAGGERATION_LOG);
 }
 
-function buildEciExaggeratedOrbitData(a_km, primarySamples, referenceSamples) {
+function buildEciExaggeratedOrbitData(coe, primarySamples, referenceSamples) {
   const k = readEciExaggerationFactor();
   return {
     exaggerationK: k,
-    primaryEci: samplesToEciExaggeratedOrbit(a_km, primarySamples, k),
+    primaryEci: samplesToEciExaggeratedOrbit(coe, primarySamples, k),
     referenceEci: referenceSamples
-      ? samplesToEciExaggeratedOrbit(a_km, referenceSamples, k)
+      ? samplesToEciExaggeratedOrbit(coe, referenceSamples, k)
       : null,
-    chiefOrbitEci: buildChiefOrbitEci(a_km, CONFIG.ECI_CHIEF_ORBIT_POINTS),
+    chiefOrbitEci: buildChiefOrbitEci(coe, CONFIG.ECI_CHIEF_ORBIT_POINTS),
   };
 }
 
@@ -341,6 +458,325 @@ function computeEciAxisRanges(orbits) {
 }
 
 // ---------------------------------------------------------------------------
+// COE ↔ ROE
+// ---------------------------------------------------------------------------
+
+function degToRad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+function radToDeg(rad) {
+  return (rad * 180) / Math.PI;
+}
+
+function defaultChiefCoeKmDeg() {
+  return { ...CONFIG.DEFAULT_CHIEF_COE };
+}
+
+function chiefCoeKmDegToRad(coeKmDeg) {
+  return {
+    a_km: coeKmDeg.a_km,
+    e: coeKmDeg.e,
+    i_rad: degToRad(coeKmDeg.i_deg),
+    raan_rad: degToRad(coeKmDeg.raan_deg),
+    argp_rad: degToRad(coeKmDeg.argp_deg),
+    M_rad: degToRad(coeKmDeg.M_deg),
+  };
+}
+
+function chiefCoeRadToKmDeg(coe) {
+  return {
+    a_km: coe.a_km,
+    e: coe.e,
+    i_deg: radToDeg(coe.i_rad),
+    raan_deg: radToDeg(coe.raan_rad),
+    argp_deg: radToDeg(coe.argp_rad),
+    M_deg: radToDeg(coe.M_rad),
+  };
+}
+
+function readChiefCoeFromInputs() {
+  const defaults = defaultChiefCoeKmDeg();
+
+  const readNum = (id, fallback) => {
+    const el = document.getElementById(id);
+    const v = parseFloat(el?.value, 10);
+    return Number.isFinite(v) ? v : fallback;
+  };
+
+  return chiefCoeKmDegToRad({
+    a_km: readNum("chief-a", defaults.a_km),
+    e: readNum("chief-e", defaults.e),
+    i_deg: readNum("chief-i", defaults.i_deg),
+    raan_deg: readNum("chief-raan", defaults.raan_deg),
+    argp_deg: readNum("chief-argp", defaults.argp_deg),
+    M_deg: readNum("chief-M", defaults.M_deg),
+  });
+}
+
+function getChiefCoe() {
+  return readChiefCoeFromInputs();
+}
+
+function applyChiefCoeToInputs(coeKmDeg) {
+  const fields = [
+    ["chief-a", coeKmDeg.a_km, (v) => String(Math.round(v))],
+    ["chief-e", coeKmDeg.e, (v) => v.toFixed(6)],
+    ["chief-i", coeKmDeg.i_deg, (v) => v.toFixed(5)],
+    ["chief-raan", coeKmDeg.raan_deg, (v) => v.toFixed(2)],
+    ["chief-argp", coeKmDeg.argp_deg, (v) => v.toFixed(2)],
+    ["chief-M", coeKmDeg.M_deg, (v) => v.toFixed(5)],
+  ];
+
+  for (const [id, value, fmt] of fields) {
+    const el = document.getElementById(id);
+    if (el) el.value = fmt(value);
+  }
+}
+
+/**
+ * Gim–Alfriend 準非特異 ROE（無次元）
+ * @see D'Amico, Gim & Alfriend (2003)
+ */
+function coeToRoe(chief, deputy) {
+  const { a_km: a, e, i_rad: i, raan_rad: Om, argp_rad: w, M_rad: M } = chief;
+  const {
+    a_km: ad,
+    e: ed,
+    i_rad: id,
+    raan_rad: Omd,
+    argp_rad: wd,
+    M_rad: Md,
+  } = deputy;
+
+  return {
+    delta_a: (ad - a) / a,
+    delta_lambda: Md - M + (Omd - Om) * Math.cos(i),
+    delta_ex: ed * Math.cos(wd) - e * Math.cos(w),
+    delta_ey: ed * Math.sin(wd) - e * Math.sin(w),
+    delta_ix: id - i,
+    delta_iy: (Omd - Om) * Math.sin(i),
+  };
+}
+
+/** 現在の ROE スライダー [km] から Deputy COE を逆算 */
+function deputyCoeFromRoeKm(roeKm, chiefCoe) {
+  const a_km = chiefCoe.a_km;
+  const roe = roeDimensionlessFromKm(roeKm, a_km);
+  const { e, i_rad: i, raan_rad: Om, argp_rad: w, M_rad: M } = chiefCoe;
+
+  const ex = roe.delta_ex + e * Math.cos(w);
+  const ey = roe.delta_ey + e * Math.sin(w);
+
+  let Omd = Om;
+  if (Math.abs(Math.sin(i)) > 1e-10) {
+    Omd = Om + roe.delta_iy / Math.sin(i);
+  }
+
+  const Md = roe.delta_lambda + M - (Omd - Om) * Math.cos(i);
+
+  return {
+    a_km: a_km * (1 + roe.delta_a),
+    e: Math.hypot(ex, ey),
+    i_deg: radToDeg(i + roe.delta_ix),
+    raan_deg: radToDeg(normalizeAngleRad(Omd)),
+    argp_deg: radToDeg(normalizeAngleRad(Math.atan2(ey, ex))),
+    M_deg: radToDeg(normalizeAngleRad(Md)),
+  };
+}
+
+function getDefaultDeputyCoe() {
+  return deputyCoeFromRoeKm(CONFIG.ROE_DEFAULTS_KM, getChiefCoe());
+}
+
+function readInputMode() {
+  const el = document.querySelector('input[name="input-mode"]:checked');
+  return el && el.value === "coe" ? "coe" : "roe";
+}
+
+function readDeputyCoeFromInputs() {
+  const defaults = getDefaultDeputyCoe();
+
+  const readNum = (id, fallback) => {
+    const el = document.getElementById(id);
+    const v = parseFloat(el?.value, 10);
+    return Number.isFinite(v) ? v : fallback;
+  };
+
+  return {
+    a_km: readNum("deputy-a", defaults.a_km),
+    e: readNum("deputy-e", defaults.e),
+    i_rad: degToRad(readNum("deputy-i", defaults.i_deg)),
+    raan_rad: degToRad(readNum("deputy-raan", defaults.raan_deg)),
+    argp_rad: degToRad(readNum("deputy-argp", defaults.argp_deg)),
+    M_rad: degToRad(readNum("deputy-M", defaults.M_deg)),
+  };
+}
+
+function roeKmFromDimensionless(roe, a_km) {
+  const roeKm = {};
+  for (const { key } of ROE_FIELDS) {
+    roeKm[key] = roe[key] * a_km;
+  }
+  return roeKm;
+}
+
+function clampRoeKm(roeKm) {
+  const { SLIDER_MIN_KM, SLIDER_MAX_KM } = CONFIG;
+  const clamped = {};
+  for (const { key } of ROE_FIELDS) {
+    clamped[key] = Math.min(SLIDER_MAX_KM, Math.max(SLIDER_MIN_KM, roeKm[key]));
+  }
+  return clamped;
+}
+
+function readRoeForPlot() {
+  const chief = getChiefCoe();
+  if (readInputMode() === "coe") {
+    return coeToRoe(chief, readDeputyCoeFromInputs());
+  }
+  return readRoeFromSliders();
+}
+
+function readRoeKmForDisplay() {
+  return roeKmFromDimensionless(readRoeForPlot(), getChiefCoe().a_km);
+}
+
+function updateCoeDerivedDisplay() {
+  const roeKm = readRoeKmForDisplay();
+  for (const { key, outputId } of COE_DERIVED_ROE_OUTPUTS) {
+    const output = document.getElementById(outputId);
+    if (output) output.textContent = formatKm(roeKm[key]);
+  }
+}
+
+function applyRoeKmToSliders(roeKm) {
+  const clamped = clampRoeKm(roeKm);
+  for (const { key, sliderId, outputId } of ROE_FIELDS) {
+    const slider = document.getElementById(sliderId);
+    const output = document.getElementById(outputId);
+    if (!slider || !output) continue;
+    slider.value = String(clamped[key]);
+    output.textContent = formatKm(clamped[key]);
+  }
+}
+
+function applyDeputyCoeToInputs(deputyCoe) {
+  const fields = [
+    ["deputy-a", deputyCoe.a_km, (v) => String(Math.round(v))],
+    ["deputy-e", deputyCoe.e, (v) => v.toFixed(6)],
+    ["deputy-i", deputyCoe.i_deg, (v) => v.toFixed(5)],
+    ["deputy-raan", deputyCoe.raan_deg, (v) => v.toFixed(2)],
+    ["deputy-argp", deputyCoe.argp_deg, (v) => v.toFixed(2)],
+    ["deputy-M", deputyCoe.M_deg, (v) => v.toFixed(5)],
+  ];
+
+  for (const [id, value, fmt] of fields) {
+    const el = document.getElementById(id);
+    if (el) el.value = fmt(value);
+  }
+}
+
+function syncDeputyCoeFromRoeSliders() {
+  applyDeputyCoeToInputs(
+    deputyCoeFromRoeKm(readRoeKmFromSliders(), getChiefCoe())
+  );
+}
+
+function syncRoeSlidersFromDeputyCoe() {
+  applyRoeKmToSliders(readRoeKmForDisplay());
+}
+
+function setInputMode(mode) {
+  if (mode !== "roe" && mode !== "coe") return;
+
+  inputMode = mode;
+
+  const roePanel = document.getElementById("roe-input-panel");
+  const coePanel = document.getElementById("coe-input-panel");
+  if (!roePanel || !coePanel) return;
+
+  const isRoe = mode === "roe";
+  roePanel.hidden = !isRoe;
+  coePanel.hidden = isRoe;
+
+  const radio = document.querySelector(`input[name="input-mode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+
+  if (isRoe) {
+    syncRoeSlidersFromDeputyCoe();
+  } else {
+    syncDeputyCoeFromRoeSliders();
+    updateCoeDerivedDisplay();
+  }
+}
+
+function initInputModeControl() {
+  const radios = document.querySelectorAll('input[name="input-mode"]');
+  if (radios.length === 0) return;
+
+  radios.forEach((radio) => {
+    radio.addEventListener("change", () => {
+      if (!radio.checked) return;
+      const nextMode = radio.value === "coe" ? "coe" : "roe";
+      if (nextMode === inputMode) return;
+      setInputMode(nextMode);
+      updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmForDisplay());
+      updateAllPlots();
+    });
+  });
+
+  setInputMode(inputMode);
+}
+
+function initDeputyCoeInputs() {
+  applyDeputyCoeToInputs(getDefaultDeputyCoe());
+
+  document.querySelectorAll(".coe-input").forEach((input) => {
+    const handler = () => {
+      if (readInputMode() !== "coe") return;
+      updateCoeDerivedDisplay();
+      updateDriftRateDisplay(getChiefCoe().a_km, readRoeKmForDisplay());
+      updateAllPlots();
+    };
+    input.addEventListener("input", handler);
+    input.addEventListener("change", handler);
+  });
+}
+
+function initChiefCoeInputs() {
+  applyChiefCoeToInputs(defaultChiefCoeKmDeg());
+
+  document.querySelectorAll(".chief-input").forEach((input) => {
+    const handler = () => {
+      refreshRelativeInputDisplays();
+      updateAllPlots();
+    };
+    input.addEventListener("input", handler);
+    input.addEventListener("change", handler);
+  });
+}
+
+function refreshRelativeInputDisplays() {
+  if (readInputMode() === "coe") {
+    updateCoeDerivedDisplay();
+  }
+  updateDriftRateDisplay(getChiefCoe().a_km, readRoeKmForDisplay());
+}
+
+function getChiefStructureKey() {
+  const c = getChiefCoe();
+  return [
+    c.a_km.toFixed(3),
+    c.e.toFixed(6),
+    radToDeg(c.i_rad).toFixed(3),
+    radToDeg(c.raan_rad).toFixed(2),
+    radToDeg(c.argp_rad).toFixed(2),
+    radToDeg(c.M_rad).toFixed(3),
+  ].join("|");
+}
+
+// ---------------------------------------------------------------------------
 // UI ヘルパ
 // ---------------------------------------------------------------------------
 
@@ -362,9 +798,7 @@ function roeDimensionlessFromKm(roeKm, a_km) {
 }
 
 function readSemiMajorAxisKm() {
-  const el = document.getElementById("semi-major-axis");
-  const v = parseFloat(el.value, 10);
-  return Number.isFinite(v) && v > 0 ? v : CONFIG.DEFAULT_SEMI_MAJOR_AXIS_KM;
+  return readChiefCoeFromInputs().a_km;
 }
 
 function readRoeKmFromSliders() {
@@ -441,7 +875,7 @@ function initSliders() {
 function getPlotStructureKey() {
   const showRef = document.getElementById("show-single-orbit-ref").checked;
   return (
-    `ref=${showRef ? 1 : 0}|orb=${readNumDriftOrbits()}|k=${readEciExaggerationFactor()}`
+    `mode=${readInputMode()}|chief=${getChiefStructureKey()}|ref=${showRef ? 1 : 0}|orb=${readNumDriftOrbits()}|k=${readEciExaggerationFactor()}`
   );
 }
 
@@ -1158,12 +1592,13 @@ function drawAllPlots(plotBundle, forceNewPlot) {
 }
 
 function updateAllPlots(forceNewPlot = false) {
-  const a_km = readSemiMajorAxisKm();
-  const roe = readRoeFromSliders();
+  const chief = getChiefCoe();
+  const a_km = chief.a_km;
+  const roe = readRoeForPlot();
   const { primary, reference, primarySamples, referenceSamples } =
     computeOrbitsForDisplay(a_km, roe);
 
-  updateDriftRateDisplay(a_km, readRoeKmFromSliders());
+  refreshRelativeInputDisplays();
 
   const traces3d = buildOrbitTraces3D(primary, reference);
   const layout3d = layout3D();
@@ -1176,7 +1611,7 @@ function updateAllPlots(forceNewPlot = false) {
     referenceEci,
     chiefOrbitEci,
     exaggerationK,
-  } = buildEciExaggeratedOrbitData(a_km, primarySamples, referenceSamples);
+  } = buildEciExaggeratedOrbitData(chief, primarySamples, referenceSamples);
   updateEciCaption(exaggerationK);
 
   const earthEquator = buildEarthEquatorCrossSectionEci();
@@ -1232,17 +1667,10 @@ function updateAllPlots(forceNewPlot = false) {
 
 function init() {
   initSliders();
+  initChiefCoeInputs();
+  initDeputyCoeInputs();
+  initInputModeControl();
   initOrbitControls();
-
-  const semiMajorInput = document.getElementById("semi-major-axis");
-  semiMajorInput.addEventListener("input", () => {
-    updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmFromSliders());
-    updateAllPlots();
-  });
-  semiMajorInput.addEventListener("change", () => {
-    updateDriftRateDisplay(readSemiMajorAxisKm(), readRoeKmFromSliders());
-    updateAllPlots();
-  });
 
   initViewTabs();
 
@@ -1252,11 +1680,8 @@ function init() {
     }
   });
 
-  updateDriftRateDisplay(
-    readSemiMajorAxisKm(),
-    readRoeKmFromSliders()
-  );
   updateEciCaption(readEciExaggerationFactor());
+  refreshRelativeInputDisplays();
   updateAllPlots();
 }
 

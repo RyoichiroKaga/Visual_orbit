@@ -124,38 +124,6 @@ body {
   box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
-.chief-coe-memo {
-  margin-top: 0.75rem;
-  padding: 0.65rem 0.75rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.chief-coe-memo__title {
-  margin: 0 0 0.45rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.chief-coe-list {
-  margin: 0;
-  padding-left: 1.1rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  line-height: 1.6;
-  color: var(--text);
-}
-
-.chief-coe-list li {
-  margin-bottom: 0.15rem;
-}
-
-.chief-coe-note {
-  margin: 0.55rem 0 0;
-}
-
 /* ROE sliders */
 
 .roe-control {
@@ -208,6 +176,50 @@ body {
 
 .mode-option input {
   accent-color: var(--accent);
+}
+
+.input-mode-options {
+  margin-bottom: 0.85rem;
+}
+
+.chief-input {
+  margin-bottom: 0.65rem;
+}
+
+.coe-input {
+  margin-bottom: 0.65rem;
+}
+
+.coe-singularity-note {
+  margin-top: 0;
+}
+
+.roe-derived {
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.roe-derived__title {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.roe-derived-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.roe-derived-list output {
+  color: var(--deputy-color);
 }
 
 .mode-hint {
