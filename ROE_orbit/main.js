@@ -9,8 +9,8 @@
 
 const CONFIG = {
   /** スライダー範囲 [km]（線形近似: 無次元 ROE ≈ 値/a） */
-  SLIDER_MIN_KM: -50,
-  SLIDER_MAX_KM: 50,
+  SLIDER_MIN_KM: -150,
+  SLIDER_MAX_KM: 150,
   SLIDER_STEP_KM: 0.5,
 
   /** 1 周あたりのサンプル点数 */
@@ -52,11 +52,11 @@ const CONFIG = {
    * 内部計算では δ = (km 値) / a に変換
    */
   ROE_DEFAULTS_KM: {
-    delta_a: 0,
-    delta_lambda: 4.2164,
-    delta_ex: 4.2164,
+    delta_a: 1,
+    delta_lambda: 100,
+    delta_ex: 10,
     delta_ey: 0,
-    delta_ix: 4.2164,
+    delta_ix: 30,
     delta_iy: 0,
   },
 };

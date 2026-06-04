@@ -76,15 +76,21 @@ t = k\frac{2\pi}{n} + \frac{u}{n}
 
 ```
 .
-├── index.html   # ページ構造・UI
-├── style.css    # レイアウト・ダークテーマ
-├── main.js      # ROE→RTN 計算・Plotly 描画
+├── index.html        # デモ一覧（ポータル）
+├── portal.css
+├── ROE_orbit/       # ROE → RTN / ECI 可視化
+│   ├── index.html
+│   ├── style.css
+│   └── main.js
+├── RMEE_orbit/      # RMEE 可視化（準備中）
+│   ├── index.html
+│   └── style.css
 └── README.md
 ```
 
 ## ローカルでの表示
 
-リポジトリのルートで簡易 HTTP サーバを起動し、ブラウザで `index.html` を開きます。
+リポジトリのルートで簡易 HTTP サーバを起動し、ブラウザで開きます。
 
 ```bash
 # Python 3
@@ -94,7 +100,11 @@ python3 -m http.server 8080
 npx --yes serve -l 8080
 ```
 
-ブラウザで `http://localhost:8080` にアクセスしてください。
+| ページ | URL |
+|--------|-----|
+| デモ一覧 | http://localhost:8080/ |
+| ROE_orbit | http://localhost:8080/ROE_orbit/ |
+| RMEE_orbit | http://localhost:8080/RMEE_orbit/ |
 
 `file://` で直接開くことも可能ですが、CDN（Plotly.js）の読み込み環境によっては HTTP サーバの利用を推奨します。
 
@@ -104,7 +114,13 @@ npx --yes serve -l 8080
 2. リポジトリの **Settings → Pages**
 3. **Build and deployment → Source** で **Deploy from a branch** を選択
 4. **Branch** を `main`（または使用ブランチ）、フォルダを **`/ (root)`** に設定して Save
-5. 数分後、`https://<ユーザー名>.github.io/<リポジトリ名>/` で公開される
+5. 数分後、次の URL で公開される
+
+| ページ | URL |
+|--------|-----|
+| デモ一覧 | `https://<ユーザー名>.github.io/<リポジトリ名>/` |
+| ROE_orbit | `https://<ユーザー名>.github.io/<リポジトリ名>/ROE_orbit/` |
+| RMEE_orbit | `https://<ユーザー名>.github.io/<リポジトリ名>/RMEE_orbit/` |
 
 ルート以外のサブディレクトリに置く場合は、そのフォルダを Pages のソースに指定するか、リポジトリ構成に合わせてパスを調整してください。
 

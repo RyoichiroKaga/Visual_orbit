@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROE → RTN 相対軌道可視化</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
+  <script src="main.js?v=15" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1>ROE → RTN 相対軌道可視化</h1>
+    <p class="subtitle">ROE から RTN 相対軌道と ECI（慣性系）での絶対軌道を可視化（線形近似）</p>
+  </header>
+
+  <main class="app-layout">
+    <aside class="control-panel">
+      <section class="panel-section">
+        <h2>Chief 軌道（COE）</h2>
+        <p class="section-hint">
+          ECI 表示と COE→ROE 変換の基準。サンプルは引数緯度 <var>u</var> = <var>ω</var> + <var>ν</var> を 0 → 2π で走査します。
+        </p>
+
+        <label class="field-label" for="chief-a">半長軸 <var>a</var> [km]</label>
+        <input type="number" id="chief-a" class="number-input chief-input" value="42164" min="1000" max="1000000" step="1">
+
+        <label class="field-label" for="chief-e">離心率 <var>e</var></label>
+        <input type="number" id="chief-e" class="number-input chief-input" value="0" min="0" max="0.9" step="0.000001">
+
+        <label class="field-label" for="chief-i">軌道傾斜角 <var>i</var> [°]</label>
+        <input type="number" id="chief-i" class="number-input chief-input" value="0" min="0" max="180" step="0.001">
+
+        <label class="field-label" for="chief-raan">昇交点赤経 <var>Ω</var> [°]</label>
+        <input type="number" id="chief-raan" class="number-input chief-input" value="0" min="0" max="360" step="0.01">
+
+        <label class="field-label" for="chief-argp">近地点幅角 <var>ω</var> [°]</label>
+        <input type="number" id="chief-argp" class="number-input chief-input" value="0" min="0" max="360" step="0.01">
+
+        <label class="field-label" for="chief-M">平均近点角 <var>M</var> [°]</label>
+        <input type="number" id="chief-M" class="number-input chief-input" value="0" min="0" max="360" step="0.001">
+      </section>
+
+      <section class="panel-section">
+        <h2>相対軌道の入力</h2>
+        <div class="input-mode-options mode-options">
+          <label class="mode-option">
+            <input type="radio" name="input-mode" value="roe" checked>
+            ROE 直接 [km]
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="input-mode" value="coe">
+            Deputy COE → ROE
+          </label>
+        </div>
+
+        <div id="roe-input-panel">
+          <p class="section-hint">
+            線形近似で <var>a</var>·δ に対応するスケール。スライダーは km、内部で δ = 値/<var>a</var> に変換します。
+          </p>
+
+          <div class="roe-control" data-roe="delta_a">
+            <div class="roe-header">
+              <label for="roe-delta-a"><var>a</var>·δ<var>a</var> [km]</label>
+              <output id="val-delta-a" for="roe-delta-a">1</output>
+            </div>
+            <input type="range" id="roe-delta-a" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_lambda">
+            <div class="roe-header">
+              <label for="roe-delta-lambda"><var>a</var>·δλ [km]</label>
+              <output id="val-delta-lambda" for="roe-delta-lambda">100</output>
+            </div>
+            <input type="range" id="roe-delta-lambda" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_ex">
+            <div class="roe-header">
+              <label for="roe-delta-ex"><var>a</var>·δ<var>e</var><sub>x</sub> [km]</label>
+              <output id="val-delta-ex" for="roe-delta-ex">10</output>
+            </div>
+            <input type="range" id="roe-delta-ex" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_ey">
+            <div class="roe-header">
+              <label for="roe-delta-ey"><var>a</var>·δ<var>e</var><sub>y</sub> [km]</label>
+              <output id="val-delta-ey" for="roe-delta-ey">0</output>
+            </div>
+            <input type="range" id="roe-delta-ey" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_ix">
+            <div class="roe-header">
+              <label for="roe-delta-ix"><var>a</var>·δ<var>i</var><sub>x</sub> [km]</label>
+              <output id="val-delta-ix" for="roe-delta-ix">30</output>
+            </div>
+            <input type="range" id="roe-delta-ix" class="roe-slider">
+          </div>
+
+          <div class="roe-control" data-roe="delta_iy">
+            <div class="roe-header">
+              <label for="roe-delta-iy"><var>a</var>·δ<var>i</var><sub>y</sub> [km]</label>
+              <output id="val-delta-iy" for="roe-delta-iy">0</output>
+            </div>
+            <input type="range" id="roe-delta-iy" class="roe-slider">
+          </div>
+        </div>
+
+        <div id="coe-input-panel" hidden>
+          <p class="section-hint">
+            Chief / Deputy の COE から Gim–Alfriend 準非特異 ROE に変換します（Chief は上記 COE を使用）。
+          </p>
+
+          <label class="field-label" for="deputy-a">Deputy 半長軸 <var>a</var><sub>d</sub> [km]</label>
+          <input type="number" id="deputy-a" class="number-input coe-input" value="42164" min="1000" max="1000000" step="1">
+
+          <label class="field-label" for="deputy-e">Deputy 離心率 <var>e</var><sub>d</sub></label>
+          <input type="number" id="deputy-e" class="number-input coe-input" value="0.0001" min="0" max="0.9" step="0.000001">
+
+          <label class="field-label" for="deputy-i">Deputy 軌道傾斜角 <var>i</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-i" class="number-input coe-input" value="0.00573" min="0" max="180" step="0.001">
+
+          <label class="field-label" for="deputy-raan">Deputy 昇交点赤経 <var>Ω</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-raan" class="number-input coe-input" value="0" min="0" max="360" step="0.01">
+
+          <label class="field-label" for="deputy-argp">Deputy 近地点幅角 <var>ω</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-argp" class="number-input coe-input" value="0" min="0" max="360" step="0.01">
+
+          <label class="field-label" for="deputy-M">Deputy 平均近点角 <var>M</var><sub>d</sub> [°]</label>
+          <input type="number" id="deputy-M" class="number-input coe-input" value="0.00573" min="0" max="360" step="0.001">
+
+          <div class="roe-derived">
+            <p class="roe-derived__title">変換後 ROE（<var>a</var>·δ）[km]</p>
+            <ul class="roe-derived-list">
+              <li><var>a</var>·δ<var>a</var> … <output id="coe-val-delta-a">1</output> km</li>
+              <li><var>a</var>·δλ … <output id="coe-val-delta-lambda">100</output> km</li>
+              <li><var>a</var>·δ<var>e</var><sub>x</sub> … <output id="coe-val-delta-ex">10</output> km</li>
+              <li><var>a</var>·δ<var>e</var><sub>y</sub> … <output id="coe-val-delta-ey">0</output> km</li>
+              <li><var>a</var>·δ<var>i</var><sub>x</sub> … <output id="coe-val-delta-ix">30</output> km</li>
+              <li><var>a</var>·δ<var>i</var><sub>y</sub> … <output id="coe-val-delta-iy">0</output> km</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h2>軌道表示</h2>
+        <p class="section-hint">
+          δλ(<var>t</var>) = δλ<sub>0</sub> − (3/2)<var>n</var>·δ<var>a</var>·<var>t</var> を常に適用（Δa = 0 のときは各周が閉曲線に重なります）。
+        </p>
+        <label class="field-label" for="num-drift-orbits">表示軌道周回数</label>
+        <div class="roe-header">
+          <input
+            type="range"
+            id="num-drift-orbits"
+            class="roe-slider"
+            min="1"
+            max="20"
+            step="1"
+            value="5"
+          >
+          <output id="val-num-drift-orbits" for="num-drift-orbits">5</output>
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="show-single-orbit-ref" checked>
+          参考: δλ 固定の 1 周（閉曲線）を重ね表示
+        </label>
+        <p class="drift-rate" id="drift-rate-display"></p>
+      </section>
+
+      <section class="panel-section theory">
+        <h2>使用する近似式</h2>
+        <p class="theory-intro">
+          近円軌道・小さい相対運動を仮定した線形近似。
+        </p>
+        <div class="equations">
+          <p><var>R</var> = <var>a</var> (δ<var>a</var> − δ<var>e</var><sub>x</sub> cos <var>u</var> − δ<var>e</var><sub>y</sub> sin <var>u</var>)</p>
+          <p><var>T</var> = <var>a</var> (δλ + 2 δ<var>e</var><sub>x</sub> sin <var>u</var> − 2 δ<var>e</var><sub>y</sub> cos <var>u</var>)</p>
+          <p><var>N</var> = <var>a</var> (δ<var>i</var><sub>x</sub> sin <var>u</var> − δ<var>i</var><sub>y</sub> cos <var>u</var>)</p>
+          <p class="equation-drift">δλ(<var>t</var>) = δλ<sub>0</sub> − (3/2) <var>n</var> δ<var>a</var> <var>t</var></p>
+        </div>
+        <ul class="axis-legend">
+          <li><strong>R</strong> — Radial [km]</li>
+          <li><strong>T</strong> — Along-track [km]</li>
+          <li><strong>N</strong> — Cross-track [km]</li>
+        </ul>
+        <p class="theory-intro eci-note">
+          <strong>ECI 誇張</strong>:
+          <var>r</var><sub>表示</sub> =
+          <var>r</var><sub>chief</sub> +
+          <var>k</var>(<var>r</var><sub>deputy</sub> − <var>r</var><sub>chief</sub>)
+          （<var>k</var> は表示専用）。地球は赤道面内に
+          <var>R</var><sub>⊕</sub> ≈ 6378 km の円（実スケール）を表示。
+        </p>
+      </section>
+    </aside>
+
+    <div class="plot-area">
+      <nav class="view-tabs" role="tablist" aria-label="表示座標系">
+        <button
+          type="button"
+          class="view-tab is-active"
+          role="tab"
+          id="view-tab-rtn"
+          aria-selected="true"
+          aria-controls="view-panel-rtn"
+          data-view="rtn"
+        >
+          RTN 相対軌道
+        </button>
+        <button
+          type="button"
+          class="view-tab"
+          role="tab"
+          id="view-tab-eci"
+          aria-selected="false"
+          aria-controls="view-panel-eci"
+          data-view="eci"
+          tabindex="-1"
+        >
+          ECI 絶対軌道
+        </button>
+      </nav>
+
+      <div
+        class="view-panel is-active"
+        id="view-panel-rtn"
+        role="tabpanel"
+        aria-labelledby="view-tab-rtn"
+      >
+        <section class="plot-block plot-block--main">
+          <h2 class="plot-title">3D — RTN 相対軌道</h2>
+          <p class="plot-caption" id="plot-3d-caption">
+            横軸: T、縦軸: R、奥行き: N [km]（chief は原点）。● 始点（u≈0）、■ 終点。
+          </p>
+          <div id="plot-3d" class="plot-container"></div>
+        </section>
+
+        <section class="plot-block plot-block--projections">
+          <h2 class="plot-title">RTN — 2D 投影</h2>
+          <div class="projection-grid">
+            <div class="projection-cell">
+              <h3>T–R 平面</h3>
+              <div id="plot-tr" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>T–N 平面</h3>
+              <div id="plot-tn" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>R–N 平面</h3>
+              <div id="plot-rn" class="plot-container plot-container--small"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div
+        class="view-panel"
+        id="view-panel-eci"
+        role="tabpanel"
+        aria-labelledby="view-tab-eci"
+        hidden
+      >
+        <section class="plot-block plot-block--eci">
+          <h2 class="plot-title">3D — ECI（慣性系・誇張表示）</h2>
+          <label class="field-label" for="eci-exaggeration">
+            表示用誇張倍率 <var>k</var> = 10<sup>n</sup>
+          </label>
+          <div class="roe-header">
+            <input
+              type="range"
+              id="eci-exaggeration"
+              class="roe-slider"
+              min="0"
+              max="4"
+              step="1"
+              value="3"
+            >
+            <output id="val-eci-exaggeration" for="eci-exaggeration">1000</output>
+          </div>
+          <p class="section-hint">n=0 → k=1（実スケール）、n=4 → k=10000。初期値 k=1000。</p>
+          <p class="plot-caption" id="plot-eci-caption"></p>
+          <div id="plot-eci-3d" class="plot-container"></div>
+        </section>
+
+        <section class="plot-block plot-block--projections">
+          <h2 class="plot-title">ECI — 2D 投影（誇張表示）</h2>
+          <div class="projection-grid">
+            <div class="projection-cell">
+              <h3>X–Y 平面</h3>
+              <div id="plot-eci-xy" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>X–Z 平面</h3>
+              <div id="plot-eci-xz" class="plot-container plot-container--small"></div>
+            </div>
+            <div class="projection-cell">
+              <h3>Y–Z 平面</h3>
+              <div id="plot-eci-yz" class="plot-container plot-container--small"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <p>教育・研究補助用デモ — 近円軌道・線形化・摂動なしの簡易モデル（厳密伝播ではありません）</p>
+  </footer>
+</body>
+</html>
